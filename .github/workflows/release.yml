@@ -1,0 +1,159 @@
+name: Release
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (skip publish)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  build-local:
+    name: Build Local
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        run: cargo build --release
+
+  dist:
+    name: Dist
+    needs: build-local
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-20.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: windows-2019
+            target: x86_64-pc-windows-msvc
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install cargo-dist
+        uses: axodotdev/cargo-dist-action@v0
+        with:
+          version: 0.22.1
+
+      - name: Run cargo-dist
+        run: |
+          cargo dist build --artifacts=global --target=${{ matrix.target }} --output-format=json > dist-manifest.json
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts-${{ matrix.target }}
+          path: |
+            target/distrib/*
+            dist-manifest.json
+
+  publish:
+    name: Publish
+    needs: dist
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*
+
+  update-homebrew:
+    name: Update Homebrew
+    needs: publish
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.dry_run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Update Formula
+        shell: python
+        run: |
+          import os
+          import re
+          import hashlib
+
+          version = os.environ["GITHUB_REF"].replace("refs/tags/v", "")
+
+          def get_sha256(path):
+              with open(path, "rb") as f:
+                  return hashlib.sha256(f.read()).hexdigest()
+
+          sha_arm = get_sha256(f"artifacts/dao-cli-v{version}-aarch64-apple-darwin.tar.gz")
+          sha_intel = get_sha256(f"artifacts/dao-cli-v{version}-x86_64-apple-darwin.tar.gz")
+          sha_linux = get_sha256(f"artifacts/dao-cli-v{version}-x86_64-unknown-linux-gnu.tar.gz")
+
+          with open("dao.rb", "r") as f:
+              content = f.read()
+
+          content = re.sub(r'version ".*"', f'version "{version}"', content)
+          content = re.sub(r'/releases/download/v[\d\.]+/dao-cli-v[\d\.]+', f'/releases/download/v{version}/dao-cli-v{version}', content)
+
+          lines = content.splitlines()
+          new_lines = []
+          current_arch = None
+
+          for line in lines:
+              if "aarch64-apple-darwin" in line:
+                  current_arch = "arm"
+              elif "x86_64-apple-darwin" in line:
+                  current_arch = "intel"
+              elif "x86_64-unknown-linux-gnu" in line:
+                  current_arch = "linux"
+
+              if "sha256" in line and current_arch:
+                  if current_arch == "arm":
+                      new_lines.append(f'    sha256 "{sha_arm}"')
+                  elif current_arch == "intel":
+                      new_lines.append(f'    sha256 "{sha_intel}"')
+                  elif current_arch == "linux":
+                      new_lines.append(f'    sha256 "{sha_linux}"')
+                  current_arch = None
+              else:
+                  new_lines.append(line)
+
+          with open("dao.rb", "w") as f:
+              f.write("\n".join(new_lines) + "\n")
+
+      - name: Commit and Push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add dao.rb
+          git commit -m "chore: update homebrew formula for v${GITHUB_REF#refs/tags/v}"
+          git push origin main
