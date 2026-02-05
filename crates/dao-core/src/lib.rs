@@ -1,3 +1,7 @@
-pub fn dao_core_placeholder() -> &'static str {
-    "dao-core"
-}
+pub mod actions;
+pub mod reducer;
+pub mod state;
+
+pub use actions::*;
+pub use reducer::*;
+pub use state::*;
