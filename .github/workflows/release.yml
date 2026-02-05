@@ -39,10 +39,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cargo-dist
-        uses: axodotdev/cargo-dist-action@v0
-        with:
-          version: 0.22.1
+      - name: Install cargo-dist (Unix)
+        if: runner.os != 'Windows'
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.22.1/cargo-dist-installer.sh | sh
+
+      - name: Install cargo-dist (Windows)
+        if: runner.os == 'Windows'
+        run: irm https://github.com/axodotdev/cargo-dist/releases/download/v0.22.1/cargo-dist-installer.ps1 | iex
 
       - name: Run cargo-dist
         run: |
