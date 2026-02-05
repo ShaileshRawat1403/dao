@@ -44,8 +44,13 @@ on:
       dry_run:
         description: "Dry run (skip publish)"
         required: false
-        default: false
+        default: true
         type: boolean
+      dist_tag:
+        description: "Tag to simulate for dist (e.g. v0.1.0)"
+        required: false
+        default: "v0.0.0-dev"
+        type: string
   pull_request:
   push:
     tags:
@@ -57,12 +62,13 @@ jobs:
     runs-on: "ubuntu-22.04"
     outputs:
       val: ${{ steps.plan.outputs.manifest }}
-      tag: ${{ !github.event.pull_request && github.ref_name || '' }}
-      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.ref_name) || '' }}
+      tag: ${{ !github.event.pull_request && (github.event_name == 'workflow_dispatch' && inputs.dist_tag || github.ref_name) || '' }}
+      tag-flag: ${{ !github.event.pull_request && format('--tag={0}', github.event_name == 'workflow_dispatch' && inputs.dist_tag || github.ref_name) || '' }}
       publishing: ${{ !github.event.pull_request && inputs.dry_run != true }}
       dry_run: ${{ inputs.dry_run }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DIST_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.dist_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,7 +91,7 @@ jobs:
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
         run: |
-          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --output-format=json > plan-dist-manifest.json
+          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', env.DIST_TAG)) || 'plan' }} --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
