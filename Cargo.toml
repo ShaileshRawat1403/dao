@@ -1,0 +1,7 @@
+[workspace]
+members = [
+  "crates/dao-core",
+  "crates/dao-exec",
+  "crates/dao-cli",
+]
+resolver = "2"
