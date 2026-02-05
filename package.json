@@ -1,0 +1,22 @@
+{
+  "name": "dao-cli",
+  "version": "0.1.0",
+  "description": "NPM wrapper for DAO CLI",
+  "bin": {
+    "dao": "bin/dao"
+  },
+  "scripts": {
+    "postinstall": "node install.js"
+  },
+  "os": [
+    "darwin",
+    "linux",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "license": "MIT",
+  "repository": "github:ShaileshRawat1403/dao"
+}

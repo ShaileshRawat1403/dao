@@ -1,7 +1,10 @@
 [package]
 name = "dao-cli"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "DAO: The AI-powered software engineering assistant"
+license = "MIT"
+repository = "https://github.com/ShaileshRawat1403/dao"
 
 [[bin]]
 name = "dao"
@@ -10,4 +13,5 @@ path = "src/main.rs"
 [dependencies]
 dao-core = { path = "../dao-core" }
 dao-exec = { path = "../dao-exec" }
-serde_json = "1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
