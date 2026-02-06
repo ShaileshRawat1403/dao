@@ -22,6 +22,14 @@ Unlike "black box" AI agents, DAO follows a strict, observable state machine loo
 | **Personality Modes**      | Configurable output styles: **Friendly** (verbose) or **Pragmatic** (terse).          |
 | **Cross-Platform**         | Native binaries for macOS (Intel/Apple Silicon), Linux, and Windows.                  |
 
+## Philosophy
+
+DAO operates on the **I7 Loop**—a disciplined thinking and execution cycle designed to prevent drift and unsafe automation.
+
+> **Initiate → Interpret → Inspect → Isolate → Implement → Inspect → Integrate**
+
+Read the full I7 Loop documentation.
+
 ## Architecture
 
 DAO is architected as a Rust workspace with a clean separation of concerns.
