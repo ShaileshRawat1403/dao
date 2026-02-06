@@ -20,7 +20,6 @@ pub enum ReasoningEffort {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThreadId(pub String);
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaVersion(pub u16);
 

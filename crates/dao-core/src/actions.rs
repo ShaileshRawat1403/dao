@@ -6,7 +6,6 @@ use super::state::ThreadId;
 
 use std::path::PathBuf;
 
-
 use super::state::ApplyStatus;
 use super::state::ApprovalAction;
 use super::state::ApprovalDecisionRecord;

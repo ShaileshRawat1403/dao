@@ -287,7 +287,11 @@ fn emitted_artifacts(tool_id: &str) -> Vec<String> {
     }
 }
 
-fn build_result(invocation: ToolInvocation, status: ToolInvocationStatus, logs: Vec<String>) -> ToolResult {
+fn build_result(
+    invocation: ToolInvocation,
+    status: ToolInvocationStatus,
+    logs: Vec<String>,
+) -> ToolResult {
     ToolResult {
         run_id: invocation.run_id,
         invocation_id: invocation.invocation_id,

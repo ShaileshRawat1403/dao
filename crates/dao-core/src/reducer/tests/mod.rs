@@ -3,6 +3,10 @@ use pretty_assertions::assert_eq;
 
 pub(super) use super::derive_journey;
 pub(super) use super::reduce;
+pub(super) use crate::actions::RuntimeAction;
+pub(super) use crate::actions::RuntimeFlag;
+pub(super) use crate::actions::ShellAction;
+pub(super) use crate::actions::UserAction;
 pub(super) use crate::reducer::DaoEffect;
 pub(super) use crate::state::ARTIFACT_SCHEMA_V1;
 pub(super) use crate::state::ApprovalAction;
@@ -37,10 +41,6 @@ pub(super) use crate::state::SystemArtifact;
 pub(super) use crate::state::VerifyArtifact;
 pub(super) use crate::state::VerifyOverall;
 pub(super) use crate::state::policy_requirement_for_risk;
-pub(super) use crate::actions::RuntimeAction;
-pub(super) use crate::actions::RuntimeFlag;
-pub(super) use crate::actions::ShellAction;
-pub(super) use crate::actions::UserAction;
 
 mod approvals_policy;
 mod artifact_guards;

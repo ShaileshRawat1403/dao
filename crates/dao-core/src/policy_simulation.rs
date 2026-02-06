@@ -50,10 +50,7 @@ pub fn simulate_tool(policy_tier: PolicyTier, tool_id: ToolId) -> ToolPolicyOutc
 }
 
 #[allow(dead_code)]
-pub fn simulate_tools(
-    policy_tier: PolicyTier,
-    tool_ids: &[ToolId],
-) -> PolicySimulationReport {
+pub fn simulate_tools(policy_tier: PolicyTier, tool_ids: &[ToolId]) -> PolicySimulationReport {
     let outcomes: Vec<ToolPolicyOutcome> = tool_ids
         .iter()
         .map(|tool_id| simulate_tool(policy_tier, *tool_id))

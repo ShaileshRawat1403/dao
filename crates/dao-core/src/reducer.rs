@@ -15,6 +15,14 @@ pub enum DaoEffect {
     RequestFrame,
 }
 
+use super::actions::ClearWhich;
+use super::actions::PALETTE_ITEMS;
+use super::actions::PaletteCommand;
+use super::actions::RuntimeAction;
+use super::actions::RuntimeFlag;
+use super::actions::ShellAction;
+use super::actions::UserAction;
+use super::actions::filtered_palette_indices;
 use super::state::ARTIFACT_SCHEMA_V1;
 use super::state::ApprovalGateRequirement;
 use super::state::ApprovalRiskClass;
@@ -43,14 +51,6 @@ use super::state::artifact_is_newer;
 use super::state::derive_journey;
 use super::state::persona_policy_for;
 use super::state::policy_requirement_for_risk;
-use super::actions::ClearWhich;
-use super::actions::PALETTE_ITEMS;
-use super::actions::PaletteCommand;
-use super::actions::RuntimeAction;
-use super::actions::RuntimeFlag;
-use super::actions::ShellAction;
-use super::actions::UserAction;
-use super::actions::filtered_palette_indices;
 
 pub fn reduce(state: &mut ShellState, action: ShellAction) -> Vec<DaoEffect> {
     match action {
