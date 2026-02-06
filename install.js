@@ -3,7 +3,7 @@ const path = require("path");
 const https = require("https");
 const { execSync } = require("child_process");
 
-const VERSION = "v0.1.0"; // This should match the package.json version
+const VERSION = "v0.1.1"; // This should match the package.json version
 const REPO = "ShaileshRawat1403/dao";
 
 const PLATFORM_MAP = {
