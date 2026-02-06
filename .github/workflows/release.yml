@@ -327,7 +327,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ShaileshRawat1403/homebrew-dao
-          token: ${{ secrets.***REDACTED*** }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           path: tap
 
       - name: Download Artifacts
