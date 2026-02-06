@@ -7,6 +7,8 @@ use std::path::PathBuf;
 
 use dao_core::actions::RuntimeAction;
 use dao_core::actions::ShellAction;
+use dao_core::persistence::replay_latest_workflow;
+use dao_core::persistence::replay_workflow_from;
 use dao_core::persistence::PersistedExecutionMode;
 use dao_core::persistence::PersistedPersonaPolicy;
 use dao_core::persistence::PersistedShellEvent;
@@ -15,11 +17,8 @@ use dao_core::persistence::PersistedShellSnapshot;
 use dao_core::persistence::PersistedWorkflowStatus;
 use dao_core::persistence::ReplayedWorkflowRun;
 use dao_core::persistence::ShellEventStore;
-use dao_core::persistence::replay_latest_workflow;
-use dao_core::persistence::replay_workflow_from;
 use dao_core::policy_simulation::simulate_tool;
 use dao_core::reducer::reduce;
-use dao_core::state::ARTIFACT_SCHEMA_V1;
 use dao_core::state::ApprovalAction;
 use dao_core::state::ApprovalDecisionKind;
 use dao_core::state::ApprovalDecisionRecord;
@@ -46,10 +45,11 @@ use dao_core::state::VerifyArtifact;
 use dao_core::state::VerifyCheck;
 use dao_core::state::VerifyCheckStatus;
 use dao_core::state::VerifyOverall;
+use dao_core::state::ARTIFACT_SCHEMA_V1;
 use dao_core::tool_registry::ToolId;
 use dao_core::tool_registry::ToolRegistry;
-use dao_core::workflow::WorkflowTemplateId;
 use dao_core::workflow::workflow_template;
+use dao_core::workflow::WorkflowTemplateId;
 use dao_exec::contracts::ToolInvocation;
 use dao_exec::contracts::ToolInvocationStatus;
 use dao_exec::executor::SimulatedToolExecutor;
@@ -162,10 +162,7 @@ fn replay_workflow(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> 
 
     println!("run_id: {}", run.run_id);
     println!("status: {}", persisted_status_label(run.status));
-    println!(
-        "current_step: {}",
-        current_step.unwrap_or("<completed>")
-    );
+    println!("current_step: {}", current_step.unwrap_or("<completed>"));
     println!("next_step: {}", next_step.unwrap_or("<none>"));
 
     match (
@@ -212,7 +209,12 @@ fn run_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         policy_tier: policy_tier.label().to_string(),
         persona_policy: PersistedPersonaPolicy {
             tier_ceiling: state.sm.persona_policy.tier_ceiling.label().to_string(),
-            explanation_depth: state.sm.persona_policy.explanation_depth.label().to_string(),
+            explanation_depth: state
+                .sm
+                .persona_policy
+                .explanation_depth
+                .label()
+                .to_string(),
             output_format: state.sm.persona_policy.output_format.label().to_string(),
         },
     })?;
@@ -247,8 +249,9 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         }
         PersistedWorkflowStatus::AwaitingApproval => {
             let Some(request_id) = run.pending_request_id.clone() else {
-                return Err("malformed resume state: awaiting approval without pending request"
-                    .into());
+                return Err(
+                    "malformed resume state: awaiting approval without pending request".into(),
+                );
             };
             let Some(tool_id) = run.pending_tool_id.clone() else {
                 return Err(
@@ -304,8 +307,7 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 Some(pending_invocation_id),
             );
         }
-        PersistedWorkflowStatus::Running
-        | PersistedWorkflowStatus::Blocked => {
+        PersistedWorkflowStatus::Running | PersistedWorkflowStatus::Blocked => {
             if matches!(run.status, PersistedWorkflowStatus::Blocked)
                 && run.blocked_reason.as_deref() != Some("interrupted")
             {
@@ -520,8 +522,14 @@ fn execute_workflow(
     save_snapshots(store, snapshot_path, seq)?;
 
     println!("workflow {run_id} completed");
-    println!("events: {}", store_path(repo).join("workflow-events.jsonl").display());
-    println!("snapshot: {}", store_path(repo).join("snapshot.json").display());
+    println!(
+        "events: {}",
+        store_path(repo).join("workflow-events.jsonl").display()
+    );
+    println!(
+        "snapshot: {}",
+        store_path(repo).join("snapshot.json").display()
+    );
     Ok(())
 }
 
@@ -706,7 +714,9 @@ fn apply_execution_outcome(
     }
 }
 
-fn open_store_for_repo(repo: &Path) -> Result<(ShellEventStore, PathBuf), Box<dyn std::error::Error>> {
+fn open_store_for_repo(
+    repo: &Path,
+) -> Result<(ShellEventStore, PathBuf), Box<dyn std::error::Error>> {
     let dao_dir = store_path(repo);
     fs::create_dir_all(&dao_dir)?;
     let events_path = dao_dir.join("workflow-events.jsonl");
@@ -790,13 +800,14 @@ fn policy_tier_for_run(run_id: u64, records: &[PersistedShellEventRecord]) -> Po
             policy_tier,
             ..
         } = &record.event
-            && *event_run_id == run_id
         {
-            return match policy_tier.as_str() {
-                "strict" => PolicyTier::Strict,
-                "permissive" => PolicyTier::Permissive,
-                _ => PolicyTier::Balanced,
-            };
+            if *event_run_id == run_id {
+                return match policy_tier.as_str() {
+                    "strict" => PolicyTier::Strict,
+                    "permissive" => PolicyTier::Permissive,
+                    _ => PolicyTier::Balanced,
+                };
+            }
         }
     }
     PolicyTier::Balanced

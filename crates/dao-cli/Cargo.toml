@@ -1,10 +1,11 @@
 [package]
 name = "dao-cli"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
+rust-version.workspace = true
 description = "DAO: The AI-powered software engineering assistant"
-license = "MIT"
-repository = "https://github.com/ShaileshRawat1403/dao"
+license.workspace = true
+repository.workspace = true
 
 [package.metadata.dist]
 dist = true
