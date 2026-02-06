@@ -15,14 +15,6 @@ pub enum DaoEffect {
     RequestFrame,
 }
 
-use super::actions::ClearWhich;
-use super::actions::PALETTE_ITEMS;
-use super::actions::PaletteCommand;
-use super::actions::RuntimeAction;
-use super::actions::RuntimeFlag;
-use super::actions::ShellAction;
-use super::actions::UserAction;
-use super::actions::filtered_palette_indices;
 use super::state::ARTIFACT_SCHEMA_V1;
 use super::state::ApprovalGateRequirement;
 use super::state::ApprovalRiskClass;
@@ -51,6 +43,14 @@ use super::state::artifact_is_newer;
 use super::state::derive_journey;
 use super::state::persona_policy_for;
 use super::state::policy_requirement_for_risk;
+use super::actions::ClearWhich;
+use super::actions::PALETTE_ITEMS;
+use super::actions::PaletteCommand;
+use super::actions::RuntimeAction;
+use super::actions::RuntimeFlag;
+use super::actions::ShellAction;
+use super::actions::UserAction;
+use super::actions::filtered_palette_indices;
 
 pub fn reduce(state: &mut ShellState, action: ShellAction) -> Vec<DaoEffect> {
     match action {
@@ -616,47 +616,48 @@ fn reduce_runtime(state: &mut ShellState, action: RuntimeAction) {
             }
         }
         RuntimeAction::ResolveApproval(decision) => {
-            if let Some(pending) = state.approval.pending.as_ref()
-                && pending.request.request_id == decision.request_id
-                && pending.request.run_id == decision.run_id
-            {
-                dirty = true;
-                state.approval.pending = None;
-                state.approval.last_decision = Some(decision.clone());
-                if state.runtime_flags.awaiting_approval.run_id == decision.run_id {
-                    state.runtime_flags.awaiting_approval.active = false;
+            if let Some(pending) = state.approval.pending.as_ref() {
+                if pending.request.request_id == decision.request_id
+                    && pending.request.run_id == decision.run_id
+                {
+                    dirty = true;
+                    state.approval.pending = None;
+                    state.approval.last_decision = Some(decision.clone());
+                    if state.runtime_flags.awaiting_approval.run_id == decision.run_id {
+                        state.runtime_flags.awaiting_approval.active = false;
+                    }
+                    state.approval.last_gate = Some(PolicyGateState {
+                        run_id: decision.run_id,
+                        action: decision.action,
+                        risk: state
+                            .approval
+                            .last_gate
+                            .as_ref()
+                            .filter(|gate| {
+                                gate.run_id == decision.run_id && gate.action == decision.action
+                            })
+                            .map_or(ApprovalRiskClass::Execution, |gate| gate.risk),
+                        requirement: ApprovalGateRequirement::Allow,
+                        reason: Arc::<str>::from(format!(
+                            "request {} {}",
+                            decision.request_id,
+                            decision.decision.label()
+                        )),
+                    });
+                    state.artifacts.logs.append(LogEntry {
+                        seq: 0,
+                        level: LogLevel::Info,
+                        ts_ms: Some(decision.timestamp_ms),
+                        source: LogSource::Shell,
+                        context: Some("approval".to_string()),
+                        message: format!(
+                            "approval {} for request {}",
+                            decision.decision.label(),
+                            decision.request_id
+                        ),
+                        run_id: decision.run_id,
+                    });
                 }
-                state.approval.last_gate = Some(PolicyGateState {
-                    run_id: decision.run_id,
-                    action: decision.action,
-                    risk: state
-                        .approval
-                        .last_gate
-                        .as_ref()
-                        .filter(|gate| {
-                            gate.run_id == decision.run_id && gate.action == decision.action
-                        })
-                        .map_or(ApprovalRiskClass::Execution, |gate| gate.risk),
-                    requirement: ApprovalGateRequirement::Allow,
-                    reason: Arc::<str>::from(format!(
-                        "request {} {}",
-                        decision.request_id,
-                        decision.decision.label()
-                    )),
-                });
-                state.artifacts.logs.append(LogEntry {
-                    seq: 0,
-                    level: LogLevel::Info,
-                    ts_ms: Some(decision.timestamp_ms),
-                    source: LogSource::Shell,
-                    context: Some("approval".to_string()),
-                    message: format!(
-                        "approval {} for request {}",
-                        decision.decision.label(),
-                        decision.request_id
-                    ),
-                    run_id: decision.run_id,
-                });
             }
         }
         RuntimeAction::ClearApprovalState(_) => {
@@ -834,10 +835,10 @@ fn reconcile_selected_diff_file(state: &mut ShellState) {
         return;
     };
 
-    if let Some(current) = state.selection.selected_diff_file.as_deref()
-        && diff.files.iter().any(|file| file.path == current)
-    {
-        return;
+    if let Some(current) = state.selection.selected_diff_file.as_deref() {
+        if diff.files.iter().any(|file| file.path == current) {
+            return;
+        }
     }
 
     if let Some(file) = diff
@@ -858,10 +859,10 @@ fn reconcile_selected_plan_step(state: &mut ShellState) {
         return;
     };
 
-    if let Some(current) = state.selection.selected_plan_step.as_deref()
-        && plan.steps.iter().any(|step| step.id == current)
-    {
-        return;
+    if let Some(current) = state.selection.selected_plan_step.as_deref() {
+        if plan.steps.iter().any(|step| step.id == current) {
+            return;
+        }
     }
 
     if let Some(step) = plan
@@ -891,10 +892,10 @@ fn legacy_diff_files_from_text(text: &str) -> Vec<DiffFile> {
     let mut current_hunk: Option<DiffHunk> = None;
 
     let finish_hunk = |file: &mut Option<DiffFile>, hunk: &mut Option<DiffHunk>| {
-        if let Some(hunk_value) = hunk.take()
-            && let Some(file_value) = file.as_mut()
-        {
-            file_value.hunks.push(hunk_value);
+        if let Some(hunk_value) = hunk.take() {
+            if let Some(file_value) = file.as_mut() {
+                file_value.hunks.push(hunk_value);
+            }
         }
     };
 

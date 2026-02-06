@@ -849,6 +849,15 @@ fn status_label(status: ToolInvocationStatus) -> &'static str {
 }
 
 fn print_help() {
+    println!(
+        r#"
+    ____  ___    ____
+   / __ \/   |  / __ \
+  / / / / /| | / / / /
+ / /_/ / ___ |/ /_/ /
+/_____/_/  |_|\____/
+"#
+    );
     println!("dao {}", env!("CARGO_PKG_VERSION"));
     println!("Usage:");
     println!("  dao run --repo PATH");
