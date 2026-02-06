@@ -156,7 +156,7 @@ jobs:
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot
-          dist build --allow-dirty --verbose --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
+          dist build --allow-dirty --verbose=info --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
@@ -209,7 +209,7 @@ jobs:
       - id: cargo-dist
         shell: bash
         run: |
-          dist build --allow-dirty --verbose --output-format=json "--artifacts=global" > dist-manifest.json
+          dist build --allow-dirty --verbose=info --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
 
           # Parse out what we just built and upload it to scratch storage
@@ -259,7 +259,7 @@ jobs:
       - id: host
         shell: bash
         run: |
-          dist host ${{ needs.plan.outputs.tag-flag }} --allow-dirty --verbose --steps=upload --steps=release --output-format=json > dist-manifest.json
+          dist host ${{ needs.plan.outputs.tag-flag }} --allow-dirty --verbose=info --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -308,3 +308,84 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+
+  update-homebrew:
+    name: Update Homebrew Tap
+    needs:
+      - plan
+      - host
+    runs-on: ubuntu-latest
+    # Only run on actual release (publishing=true) and if host job succeeded
+    if: ${{ needs.plan.outputs.publishing == 'true' && needs.host.result == 'success' }}
+    steps:
+      - name: Checkout Main Repo
+        uses: actions/checkout@v4
+        with:
+          path: main_repo
+
+      - name: Checkout Tap
+        uses: actions/checkout@v4
+        with:
+          repository: ShaileshRawat1403/homebrew-dao
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: artifacts-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Update Formula
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import os
+          import re
+          import hashlib
+
+          version = os.environ["GITHUB_REF"].replace("refs/tags/v", "")
+
+          def get_sha256(path):
+              try:
+                  with open(path, "rb") as f:
+                      return hashlib.sha256(f.read()).hexdigest()
+              except FileNotFoundError:
+                  return "0000000000000000000000000000000000000000000000000000000000000000"
+
+          f_arm = f"dao-cli-v{version}-aarch64-apple-darwin.tar.gz"
+          f_intel = f"dao-cli-v{version}-x86_64-apple-darwin.tar.gz"
+          f_linux = f"dao-cli-v{version}-x86_64-unknown-linux-gnu.tar.gz"
+
+          sha_arm = get_sha256(os.path.join("artifacts", f_arm))
+          sha_intel = get_sha256(os.path.join("artifacts", f_intel))
+          sha_linux = get_sha256(os.path.join("artifacts", f_linux))
+
+          with open("main_repo/dao.rb", "r") as f:
+              content = f.read()
+
+          content = re.sub(r'version ".*"', f'version "{version}"', content)
+          content = content.replace("/v0.1.0/", f"/v{version}/")
+          content = content.replace("dao-cli-v0.1.0-", f"dao-cli-v{version}-")
+          content = content.replace("REPLACE_WITH_SHA256_ARM64", sha_arm)
+          content = content.replace("REPLACE_WITH_SHA256_X86_64", sha_intel)
+          content = content.replace("REPLACE_WITH_SHA256_LINUX", sha_linux)
+
+          with open("tap/Formula/dao.rb", "w") as f:
+              f.write(content)
+          EOF
+
+      - name: Commit and Push
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/dao.rb
+          git commit -m "chore: update homebrew formula for v${GITHUB_REF#refs/tags/v}"
+          git push origin main
