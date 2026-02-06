@@ -148,10 +148,10 @@ fn execute_scan(invocation: ToolInvocation, cwd: &Path) -> ToolExecutionOutcome 
     }
 
     let mut risk_flags = Vec::new();
-    if let Ok(output) = run_git(cwd, ["status", "--porcelain"])
-        && !stdout_text(&output).trim().is_empty()
-    {
-        risk_flags.push("dirty_worktree".to_string());
+    if let Ok(output) = run_git(cwd, ["status", "--porcelain"]) {
+        if !stdout_text(&output).trim().is_empty() {
+            risk_flags.push("dirty_worktree".to_string());
+        }
     }
 
     let stack_label = if detected_stack.is_empty() {
