@@ -233,26 +233,27 @@ pub fn replay_workflow_from(
                 step_index,
                 reason,
             } => {
-                if let Some(run) = latest.as_mut()
-                    && run.run_id == run_id
-                {
-                    run.status = status;
-                    run.step_index = step_index;
-                    run.blocked_reason = reason;
-                    if !matches!(status, PersistedWorkflowStatus::AwaitingApproval) {
-                        run.pending_request_id = None;
-                        run.pending_tool_id = None;
-                        run.pending_invocation_id = None;
+                if let Some(run) = latest.as_mut() {
+                    if run.run_id == run_id {
+                        run.status = status;
+                        run.step_index = step_index;
+                        run.blocked_reason = reason;
+                        if !matches!(status, PersistedWorkflowStatus::AwaitingApproval) {
+                            run.pending_request_id = None;
+                            run.pending_tool_id = None;
+                            run.pending_invocation_id = None;
+                        }
                     }
                 }
             }
-            PersistedShellEvent::ToolResultRecorded { run_id, status, .. } => {
-                if let Some(run) = latest.as_mut()
-                    && run.run_id == run_id
-                    && status == "succeeded"
-                {
-                    run.step_index = run.step_index.saturating_add(1);
-                    run.next_invocation_id = run.next_invocation_id.saturating_add(1);
+            PersistedShellEvent::ToolResultRecorded {
+                run_id, status, ..
+            } => {
+                if let Some(run) = latest.as_mut() {
+                    if run.run_id == run_id && status == "succeeded" {
+                        run.step_index = run.step_index.saturating_add(1);
+                        run.next_invocation_id = run.next_invocation_id.saturating_add(1);
+                    }
                 }
             }
             PersistedShellEvent::ApprovalRequested {
@@ -262,15 +263,15 @@ pub fn replay_workflow_from(
                 tool_id,
                 ..
             } => {
-                if let Some(run) = latest.as_mut()
-                    && run.run_id == run_id
-                {
-                    run.status = PersistedWorkflowStatus::AwaitingApproval;
-                    run.blocked_reason = None;
-                    run.pending_request_id = Some(request_id);
-                    run.pending_tool_id = Some(tool_id);
-                    run.pending_invocation_id = Some(invocation_id);
-                    run.next_invocation_id = invocation_id.saturating_add(1);
+                if let Some(run) = latest.as_mut() {
+                    if run.run_id == run_id {
+                        run.status = PersistedWorkflowStatus::AwaitingApproval;
+                        run.blocked_reason = None;
+                        run.pending_request_id = Some(request_id);
+                        run.pending_tool_id = Some(tool_id);
+                        run.pending_invocation_id = Some(invocation_id);
+                        run.next_invocation_id = invocation_id.saturating_add(1);
+                    }
                 }
             }
             PersistedShellEvent::ApprovalResolved {
@@ -278,30 +279,31 @@ pub fn replay_workflow_from(
                 run_id,
                 decision,
             } => {
-                if let Some(run) = latest.as_mut()
-                    && run.run_id == run_id
-                    && run.pending_request_id.as_deref() == Some(request_id.as_str())
-                {
-                    if decision == "approved" {
-                        run.status = PersistedWorkflowStatus::Running;
-                    } else {
-                        run.status = PersistedWorkflowStatus::Blocked;
+                if let Some(run) = latest.as_mut() {
+                    if run.run_id == run_id
+                        && run.pending_request_id.as_deref() == Some(request_id.as_str())
+                    {
+                        if decision == "approved" {
+                            run.status = PersistedWorkflowStatus::Running;
+                        } else {
+                            run.status = PersistedWorkflowStatus::Blocked;
+                        }
+                        run.blocked_reason = None;
+                        run.pending_request_id = None;
+                        run.pending_tool_id = None;
+                        run.pending_invocation_id = None;
                     }
-                    run.blocked_reason = None;
-                    run.pending_request_id = None;
-                    run.pending_tool_id = None;
-                    run.pending_invocation_id = None;
                 }
             }
             PersistedShellEvent::WorkflowResumed { run_id } => {
-                if let Some(run) = latest.as_mut()
-                    && run.run_id == run_id
-                {
-                    run.status = PersistedWorkflowStatus::Running;
-                    run.blocked_reason = None;
-                    run.pending_request_id = None;
-                    run.pending_tool_id = None;
-                    run.pending_invocation_id = None;
+                if let Some(run) = latest.as_mut() {
+                    if run.run_id == run_id {
+                        run.status = PersistedWorkflowStatus::Running;
+                        run.blocked_reason = None;
+                        run.pending_request_id = None;
+                        run.pending_tool_id = None;
+                        run.pending_invocation_id = None;
+                    }
                 }
             }
             PersistedShellEvent::ToolInvocationIssued { .. }

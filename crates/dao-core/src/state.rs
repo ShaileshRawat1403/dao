@@ -20,6 +20,7 @@ pub enum ReasoningEffort {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ThreadId(pub String);
 
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaVersion(pub u16);
 
@@ -1114,14 +1115,14 @@ pub fn derive_journey(
     .max()
     .unwrap_or(0);
 
-    if let Some(err) = journey_error
-        && err.run_id == active_run_id
-    {
-        return JourneyProjection {
-            state: JourneyState::Failed,
-            step: JourneyStep::Learn,
-            active_run_id,
-        };
+    if let Some(err) = journey_error {
+        if err.run_id == active_run_id {
+            return JourneyProjection {
+                state: JourneyState::Failed,
+                step: JourneyStep::Learn,
+                active_run_id,
+            };
+        }
     }
 
     if approval
@@ -1169,25 +1170,24 @@ pub fn derive_journey(
         };
     }
 
-    if let Some(verify) = artifacts.verify.as_ref()
-        && verify.run_id == active_run_id
-        && verify.overall == VerifyOverall::Passing
-    {
-        return JourneyProjection {
-            state: JourneyState::Completed,
-            step: JourneyStep::Learn,
-            active_run_id,
-        };
+    if let Some(verify) = artifacts.verify.as_ref() {
+        if verify.run_id == active_run_id && verify.overall == VerifyOverall::Passing {
+            return JourneyProjection {
+                state: JourneyState::Completed,
+                step: JourneyStep::Learn,
+                active_run_id,
+            };
+        }
     }
 
-    if let Some(diff) = artifacts.diff.as_ref()
-        && diff.run_id == active_run_id
-    {
-        return JourneyProjection {
-            state: JourneyState::ReviewReady,
-            step: JourneyStep::Preview,
-            active_run_id,
-        };
+    if let Some(diff) = artifacts.diff.as_ref() {
+        if diff.run_id == active_run_id {
+            return JourneyProjection {
+                state: JourneyState::ReviewReady,
+                step: JourneyStep::Preview,
+                active_run_id,
+            };
+        }
     }
 
     JourneyProjection {
