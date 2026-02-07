@@ -315,8 +315,6 @@ jobs:
       - plan
       - host
     runs-on: ubuntu-latest
-    # Only run on actual release (publishing=true) and if host job succeeded
-    if: ${{ needs.plan.outputs.publishing == 'true' && needs.host.result == 'success' }}
     # Run on actual release (host success) OR dry run (always run to test logic)
     if: ${{ (needs.plan.outputs.publishing == 'true' && needs.host.result == 'success') || needs.plan.outputs.dry_run == 'true' }}
     steps:
