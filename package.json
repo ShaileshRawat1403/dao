@@ -1,6 +1,6 @@
 {
   "name": "dao-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "NPM wrapper for DAO CLI",
   "bin": {
     "dao": "bin/dao"

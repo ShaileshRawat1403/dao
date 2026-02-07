@@ -66,7 +66,7 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "dao-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "dao-core",
  "dao-exec",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "dao-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "chrono",
  "pretty_assertions",
@@ -87,7 +87,7 @@ dependencies = [
 
 [[package]]
 name = "dao-exec"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "pretty_assertions",
  "serde",
