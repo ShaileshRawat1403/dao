@@ -317,6 +317,8 @@ jobs:
     runs-on: ubuntu-latest
     # Only run on actual release (publishing=true) and if host job succeeded
     if: ${{ needs.plan.outputs.publishing == 'true' && needs.host.result == 'success' }}
+    # Run on actual release (host success) OR dry run (always run to test logic)
+    if: ${{ (needs.plan.outputs.publishing == 'true' && needs.host.result == 'success') || needs.plan.outputs.dry_run == 'true' }}
     steps:
       - name: Checkout Main Repo
         uses: actions/checkout@v4
@@ -359,11 +361,20 @@ jobs:
               with open(path, "rb") as f:
                   return hashlib.sha256(f.read()).hexdigest()
 
+          print("Listing all files in artifacts directory:")
+          for root, dirs, files in os.walk("artifacts"):
+              for file in files:
+                  print(os.path.join(root, file))
+
           def find_artifact(target):
+              seen = []
+              target_alt = target.replace("-", "_")
               for root, _, files in os.walk("artifacts"):
                   for file in files:
-                      if target in file and (file.endswith(".tar.gz") or file.endswith(".tar.xz") or file.endswith(".zip")):
+                      seen.append(file)
+                      if (target in file or target_alt in file) and (file.endswith(".tar.gz") or file.endswith(".tar.xz") or file.endswith(".zip")):
                           return os.path.join(root, file), file
+              print(f"DEBUG: Searched for '{target}' in artifacts. Files seen: {seen}")
               raise FileNotFoundError(f"Could not find artifact for target: {target}")
 
           # Dynamically find the correct filename for each target
@@ -402,6 +413,7 @@ jobs:
 
       - name: Commit and Push
         working-directory: tap
+        if: ${{ needs.plan.outputs.dry_run != 'true' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
