@@ -362,20 +362,21 @@ jobs:
           def find_artifact(target):
               for root, _, files in os.walk("artifacts"):
                   for file in files:
-                      if target in file and file.endswith(".tar.gz"):
-                          return file
+                      if target in file and (file.endswith(".tar.gz") or file.endswith(".tar.xz") or file.endswith(".zip")):
+                          return os.path.join(root, file), file
               raise FileNotFoundError(f"Could not find artifact for target: {target}")
 
           # Dynamically find the correct filename for each target
-          f_arm = find_artifact("aarch64-apple-darwin")
-          f_intel = find_artifact("x86_64-apple-darwin")
-          f_linux = find_artifact("x86_64-unknown-linux-gnu")
+          path_arm, name_arm = find_artifact("aarch64-apple-darwin")
+          path_intel, name_intel = find_artifact("x86_64-apple-darwin")
+          path_linux, name_linux = find_artifact("x86_64-unknown-linux-gnu")
 
-          print(f"Found artifacts: ARM={f_arm}, Intel={f_intel}, Linux={f_linux}")
+          print(f"Found artifacts: ARM={name_arm}, Intel={name_intel}, Linux={name_linux}")
+          print(f"Paths: {path_arm}, {path_intel}, {path_linux}")
 
-          sha_arm = get_sha256(os.path.join("artifacts", f_arm))
-          sha_intel = get_sha256(os.path.join("artifacts", f_intel))
-          sha_linux = get_sha256(os.path.join("artifacts", f_linux))
+          sha_arm = get_sha256(path_arm)
+          sha_intel = get_sha256(path_intel)
+          sha_linux = get_sha256(path_linux)
 
           with open("main_repo/dao.rb", "r") as f:
               content = f.read()
@@ -387,6 +388,9 @@ jobs:
           content = re.sub(r'dao-cli-v[\d\.]+-aarch64-apple-darwin\.tar\.gz', f_arm, content)
           content = re.sub(r'dao-cli-v[\d\.]+-x86_64-apple-darwin\.tar\.gz', f_intel, content)
           content = re.sub(r'dao-cli-v[\d\.]+-x86_64-unknown-linux-gnu\.tar\.gz', f_linux, content)
+          content = re.sub(r'dao-cli-v[\d\.]+-aarch64-apple-darwin\.tar\.gz', name_arm, content)
+          content = re.sub(r'dao-cli-v[\d\.]+-x86_64-apple-darwin\.tar\.gz', name_intel, content)
+          content = re.sub(r'dao-cli-v[\d\.]+-x86_64-unknown-linux-gnu\.tar\.gz', name_linux, content)
 
           content = content.replace("REPLACE_WITH_SHA256_ARM64", sha_arm)
           content = content.replace("REPLACE_WITH_SHA256_X86_64", sha_intel)
