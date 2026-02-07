@@ -337,10 +337,14 @@ jobs:
           path: artifacts
           merge-multiple: true
 
+      - name: List Artifacts
+        run: ls -R artifacts
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+          python-version: '3.x'
 
       - name: Update Formula
         shell: bash
@@ -353,15 +357,22 @@ jobs:
           version = os.environ["GITHUB_REF"].replace("refs/tags/v", "")
 
           def get_sha256(path):
-              try:
-                  with open(path, "rb") as f:
-                      return hashlib.sha256(f.read()).hexdigest()
-              except FileNotFoundError:
-                  return "0000000000000000000000000000000000000000000000000000000000000000"
+              with open(path, "rb") as f:
+                  return hashlib.sha256(f.read()).hexdigest()
 
-          f_arm = f"dao-cli-v{version}-aarch64-apple-darwin.tar.gz"
-          f_intel = f"dao-cli-v{version}-x86_64-apple-darwin.tar.gz"
-          f_linux = f"dao-cli-v{version}-x86_64-unknown-linux-gnu.tar.gz"
+          def find_artifact(target):
+              for root, _, files in os.walk("artifacts"):
+                  for file in files:
+                      if target in file and file.endswith(".tar.gz"):
+                          return file
+              raise FileNotFoundError(f"Could not find artifact for target: {target}")
+
+          # Dynamically find the correct filename for each target
+          f_arm = find_artifact("aarch64-apple-darwin")
+          f_intel = find_artifact("x86_64-apple-darwin")
+          f_linux = find_artifact("x86_64-unknown-linux-gnu")
+
+          print(f"Found artifacts: ARM={f_arm}, Intel={f_intel}, Linux={f_linux}")
 
           sha_arm = get_sha256(os.path.join("artifacts", f_arm))
           sha_intel = get_sha256(os.path.join("artifacts", f_intel))
@@ -372,7 +383,12 @@ jobs:
 
           content = re.sub(r'version ".*"', f'version "{version}"', content)
           content = content.replace("/v0.1.0/", f"/v{version}/")
-          content = content.replace("dao-cli-v0.1.0-", f"dao-cli-v{version}-")
+
+          # Replace the hardcoded filenames with the actual ones found
+          content = re.sub(r'dao-cli-v[\d\.]+-aarch64-apple-darwin\.tar\.gz', f_arm, content)
+          content = re.sub(r'dao-cli-v[\d\.]+-x86_64-apple-darwin\.tar\.gz', f_intel, content)
+          content = re.sub(r'dao-cli-v[\d\.]+-x86_64-unknown-linux-gnu\.tar\.gz', f_linux, content)
+
           content = content.replace("REPLACE_WITH_SHA256_ARM64", sha_arm)
           content = content.replace("REPLACE_WITH_SHA256_X86_64", sha_intel)
           content = content.replace("REPLACE_WITH_SHA256_LINUX", sha_linux)
