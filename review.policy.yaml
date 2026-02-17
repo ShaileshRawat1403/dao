@@ -1,0 +1,135 @@
+id: "cargo-protection"
+version: "1.0"
+mode: "allow_by_default"
+applies_to:
+  branches: ["main"]
+  environments: ["prod"]
+defaults:
+  approval:
+    required: 1
+    roles: ["admin"]
+rules:
+  - id: "block-cargo-toml"
+    when: 'contains(diff_file_names, "Cargo.toml")'
+    then:
+      action: "require_approval"
+      message: "Changes to Cargo.toml affect dependencies and require Tech Lead approval."
+      required: 1
+      roles: ["tech-lead"]
+  - id: "block-large-changes"
+    when: "diff_files_changed > 10"
+    then:
+      action: "block"
+      message: "Too many files changed (limit 10). Please break this into smaller PRs."
+  - id: "approval-large-additions"
+    when: "diff_lines_added > 500"
+    then:
+      action: "require_approval"
+      message: "Large additions (>500 lines) require explicit approval."
+      required: 1
+      roles: ["maintainer"]
+  - id: "allow-refactor"
+    when: 'risk_class == "refactor"'
+    then:
+      action: "allow"
+      message: "Refactors are auto-approved."
+  - id: "block-net-deletion"
+    when: 'diff_lines_deleted > diff_lines_added && risk_class != "refactor"'
+    then:
+      action: "block"
+      message: "Net deletion of code (more deleted than added) is blocked."
+  - id: "auth-security-check"
+    when: 'contains(diff_file_names, "auth/")'
+    then:
+      action: "require_approval"
+      message: "Changes to auth/ require double approval."
+      required: 2
+      roles: ["security-team", "tech-lead"]
+  - id: "block-secret-files"
+    when: 'contains(diff_file_names, ".env") || contains(diff_file_names, ".pem") || contains(diff_file_names, ".key")'
+    then:
+      action: "block"
+      message: "Committing secret files (.env, .pem, .key) is strictly forbidden."
+  - id: "wip-check"
+    when: 'contains(commit_message, "WIP")'
+    then:
+      action: "require_approval"
+      message: "Work in progress (WIP) requires approval."
+      required: 1
+      roles: ["maintainer"]
+  - id: "sync-cargo-lock"
+    when: 'contains(diff_file_names, "Cargo.toml") && !contains(diff_file_names, "Cargo.lock")'
+    then:
+      action: "block"
+      message: "Cargo.toml changed but Cargo.lock did not. Please update the lockfile."
+  - id: "block-unsafe"
+    when: 'contains(diff_added_content, "unsafe")'
+    then:
+      action: "block"
+      message: "Unsafe code detected. Explicit approval required."
+  - id: "check-unwrap"
+    when: 'contains(diff_added_content, "unwrap()")'
+    then:
+      action: "require_approval"
+      message: "Usage of unwrap() detected. Please use expect() or handle errors properly."
+      required: 1
+      roles: ["maintainer"]
+  - id: "block-todo"
+    when: 'contains(diff_added_content, "todo!(")'
+    then:
+      action: "block"
+      message: "Production code cannot contain todo!() macros."
+  - id: "block-dbg"
+    when: 'contains(diff_added_content, "dbg!(")'
+    then:
+      action: "block"
+      message: "Debug prints (dbg!) are not allowed in production."
+  - id: "block-panic"
+    when: 'contains(diff_added_content, "panic!(")'
+    then:
+      action: "block"
+      message: "Explicit panic!() calls are forbidden. Use Result/Option instead."
+  - id: "protect-policy-file"
+    when: 'contains(diff_file_names, "review.policy.yaml")'
+    then:
+      action: "require_approval"
+      message: "Changes to the governance policy require Admin approval."
+      required: 1
+      roles: ["admin"]
+  - id: "database-migration-check"
+    when: 'contains(diff_file_names, "migrations/") && contains(diff_file_names, ".sql")'
+    then:
+      action: "require_approval"
+      message: "Database migrations require DBA approval."
+      required: 1
+      roles: ["dba"]
+  - id: "block-absolute-paths"
+    when: 'contains(diff_added_content, "/Users/") || contains(diff_added_content, "/home/")'
+    then:
+      action: "block"
+      message: "Absolute paths detected. Use relative paths or environment variables."
+  - id: "block-private-keys"
+    when: 'contains(diff_added_content, "BEGIN PRIVATE KEY")'
+    then:
+      action: "block"
+      message: "Private keys detected in code. Use a secrets manager."
+  - id: "block-aws-keys"
+    when: 'contains(diff_added_content, "AKIA")'
+    then:
+      action: "block"
+      message: "AWS Access Key ID detected. Do not commit credentials."
+  - id: "enforce-license-header"
+    when: '!all_match(new_file_contents, "Copyright 202.")'
+    then:
+      action: "block"
+      message: "All new files must contain a Copyright 202x header."
+  - id: "block-empty-message"
+    when: 'commit_message == ""'
+    then:
+      action: "block"
+      message: "Commit message cannot be empty."
+  - id: "enforce-test-coverage"
+    when: "missing_tests(new_file_paths)"
+    then:
+      action: "block"
+      message: "New source files must have a corresponding test file."

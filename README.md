@@ -8,9 +8,17 @@
 [![Release](https://github.com/ShaileshRawat1403/dao/actions/workflows/release.yml/badge.svg)](https://github.com/ShaileshRawat1403/dao/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**DAO** is a deterministic, safety-first autonomous agent designed to help developers understand, plan, and execute software engineering tasks.
+**DAO** is a workflow orchestrator, shipped as a standalone CLI, backed by an embeddable orchestration engine.
 
-Unlike "black box" AI agents, DAO follows a strict, observable state machine loop (**Scan** → **Plan** → **Diff** → **Verify**), ensuring you always remain in control of the execution flow. It separates core policy logic from execution side effects, allowing for safe simulation and replayability.
+It acts as an orchestrator that:
+
+- **Coordinates multiple steps**
+- **Manages state across time**
+- **Enforces ordering**
+- **Handles interruptions and resumes safely**
+- **Governs execution**
+
+It orchestrates the lifecycle **Scan** → **Plan** → **Diff** → **Verify**, enforcing policy gates, pausing for approval, persisting state, and replaying deterministically.
 
 ## Features
 
@@ -26,7 +34,17 @@ Unlike "black box" AI agents, DAO follows a strict, observable state machine loo
 
 DAO operates on the **I7 Loop**—a disciplined thinking and execution cycle designed to prevent drift and unsafe automation.
 
-> **Initiate → Interpret → Inspect → Isolate → Implement → Inspect → Integrate**
+### DAO Alignment Summary
+
+| I7 Stage        | DAO Layer         |
+| :-------------- | :---------------- |
+| **Ideate**      | CLI / Intent      |
+| **Investigate** | State + Policy    |
+| **Iterate**     | Reducers          |
+| **Integrate**   | Core + Exec       |
+| **Instrument**  | Events / Logs     |
+| **Inspect**     | Replay / Review   |
+| **Improve**     | Policy + Defaults |
 
 Read the full I7 Loop documentation.
 
@@ -99,8 +117,62 @@ To start DAO on a repository, simply point it to the directory. It will scan the
 dao run --repo ./my-project
 ```
 
+### TUI Cockpit
+
+```bash
+dao ui --repo .
+```
+
+Select backend explicitly if needed:
+
+```bash
+dao ui --repo . --provider ollama
+dao ui --repo . --provider codex --model gpt-5
+dao ui --repo . --provider gemini --model gemini-2.5-pro
+```
+
+In chat mode:
+- `i` focuses chat input
+- `/models` opens model picker
+- `/model <name>` sets model directly
+- `/provider <ollama|codex|gemini>` sets provider
+- `/status` prints current runtime status
+- `/tab <name|1-9>` jumps to a tab
+- `/theme <name>` switches theme
+- `/telemetry` opens telemetry tab
+- `/clear` clears chat/system log buffer
+- `/help` prints in-chat command help
+- `Up/Down`, `PgUp/PgDn`, `End` scroll chat output
+- Typing `/...` shows inline command suggestions
+
+Telemetry:
+- Press `t` for the live telemetry view (CPU, RAM, process memory, token rate).
+- GPU metrics show live values when supported; otherwise explicit `N/A (unsupported)`.
+
+Navigation:
+- `1..9` jump directly to tabs in current tab order
+- `z` toggle focus mode
+- `+` / `-` or `Ctrl+Up/Down` resize chat input
+
+### One-shot or Interactive Chat
+
+```bash
+dao chat "Explain this diff in plain language"
+dao chat
+dao chat --provider codex --model gpt-5 "Summarize this repository"
+dao chat --provider gemini --model gemini-2.5-pro "Generate release notes from this diff"
+```
+
+Auth setup:
+- Codex CLI: run `codex login` (supports ChatGPT login / API key).
+- Gemini CLI: run `gemini` once in interactive terminal to complete OAuth.
+
 ## Supported Platforms
 
 - macOS (Intel & Apple Silicon)
 - Linux (x64)
 - Windows (x64)
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the plan to evolve DAO from a framework into a fully capable AI agent.

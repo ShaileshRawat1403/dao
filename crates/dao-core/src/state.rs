@@ -1,32 +1,50 @@
 #![allow(dead_code)]
-
+use crate::config::Config;
+use crate::policy_engine::ReviewPolicy;
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
+use std::iter::DoubleEndedIterator;
 use std::path::PathBuf;
-use std::sync::Arc;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileBrowserState {
+    pub current_path: PathBuf,
+    pub entries: Vec<String>,
+    pub selected: usize,
+}
+
+impl Default for FileBrowserState {
+    fn default() -> Self {
+        Self {
+            current_path: PathBuf::from("."),
+            entries: Vec::new(),
+            selected: 0,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Personality {
     Friendly,
     Pragmatic,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ReasoningEffort {
     Low,
     Medium,
     High,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadId(pub String);
 
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchemaVersion(pub u16);
 
 pub const ARTIFACT_SCHEMA_V1: SchemaVersion = SchemaVersion(1);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ClearReason {
     SessionReset,
     UserRequest,
@@ -34,39 +52,45 @@ pub enum ClearReason {
     InvalidatedByNewRun,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShellTab {
     Chat,
     Overview,
+    Telemetry,
     System,
     Plan,
     Diff,
     Explain,
     Logs,
+    FileBrowser,
 }
 
 impl ShellTab {
     pub fn next(self) -> Self {
         match self {
             Self::Chat => Self::Overview,
-            Self::Overview => Self::System,
+            Self::Overview => Self::Telemetry,
+            Self::Telemetry => Self::System,
             Self::System => Self::Plan,
             Self::Plan => Self::Diff,
             Self::Diff => Self::Explain,
             Self::Explain => Self::Logs,
-            Self::Logs => Self::Chat,
+            Self::Logs => Self::FileBrowser,
+            Self::FileBrowser => Self::Chat,
         }
     }
 
     pub fn prev(self) -> Self {
         match self {
-            Self::Chat => Self::Logs,
+            Self::Chat => Self::FileBrowser,
             Self::Overview => Self::Chat,
-            Self::System => Self::Overview,
+            Self::Telemetry => Self::Overview,
+            Self::System => Self::Telemetry,
             Self::Plan => Self::System,
             Self::Diff => Self::Plan,
             Self::Explain => Self::Diff,
             Self::Logs => Self::Explain,
+            Self::FileBrowser => Self::Logs,
         }
     }
 
@@ -74,16 +98,18 @@ impl ShellTab {
         match self {
             Self::Chat => "Chat",
             Self::Overview => "Overview",
+            Self::Telemetry => "Telemetry",
             Self::System => "System",
             Self::Plan => "Plan",
             Self::Diff => "Diff",
             Self::Explain => "Explain",
             Self::Logs => "Logs",
+            Self::FileBrowser => "File Browser",
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JourneyStep {
     Idea,
     Understand,
@@ -108,7 +134,7 @@ impl JourneyStep {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum JourneyState {
     Idle,
     Scanning,
@@ -137,7 +163,7 @@ impl JourneyState {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorKind {
     UserInput,
     Runtime,
@@ -156,15 +182,15 @@ impl ErrorKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JourneyError {
     pub kind: ErrorKind,
-    pub message: Arc<str>,
+    pub message: String,
     pub run_id: u64,
 }
 
 impl JourneyError {
-    pub fn new(kind: ErrorKind, message: impl Into<Arc<str>>, run_id: u64) -> Self {
+    pub fn new(kind: ErrorKind, message: impl Into<String>, run_id: u64) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -173,7 +199,7 @@ impl JourneyError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct JourneyStatus {
     pub state: JourneyState,
     pub step: JourneyStep,
@@ -181,7 +207,7 @@ pub struct JourneyStatus {
     pub active_run_id: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SafetyMode {
     Safe,
     Supervised,
@@ -198,7 +224,7 @@ impl SafetyMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ScanStatus {
     Unknown,
     Running,
@@ -219,7 +245,7 @@ impl ScanStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApplyStatus {
     NotApplied,
     Applied,
@@ -234,7 +260,7 @@ impl ApplyStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerifyStatus {
     NotRun,
     Pass,
@@ -251,7 +277,7 @@ impl VerifyStatus {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RiskLevel {
     Low,
     Medium,
@@ -268,7 +294,7 @@ impl RiskLevel {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PolicyTier {
     Strict,
     Balanced,
@@ -285,7 +311,7 @@ impl PolicyTier {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalAction {
     Read,
     Patch,
@@ -304,10 +330,11 @@ impl ApprovalAction {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalRiskClass {
     ReadOnly,
     PatchOnly,
+    Refactor,
     Execution,
     Destructive,
 }
@@ -317,13 +344,14 @@ impl ApprovalRiskClass {
         match self {
             Self::ReadOnly => "read-only",
             Self::PatchOnly => "patch-only",
+            Self::Refactor => "refactor",
             Self::Execution => "execution",
             Self::Destructive => "destructive",
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalGateRequirement {
     Allow,
     RequireApproval,
@@ -340,7 +368,7 @@ impl ApprovalGateRequirement {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ApprovalDecisionKind {
     Approved,
     Denied,
@@ -355,18 +383,18 @@ impl ApprovalDecisionKind {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalRequestRecord {
     pub request_id: String,
     pub run_id: u64,
     pub action: ApprovalAction,
     pub risk: ApprovalRiskClass,
-    pub reason: Arc<str>,
-    pub preview: Arc<str>,
+    pub reason: String,
+    pub preview: String,
     pub created_at_ms: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ApprovalDecisionRecord {
     pub request_id: String,
     pub run_id: u64,
@@ -375,25 +403,26 @@ pub struct ApprovalDecisionRecord {
     pub timestamp_ms: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingApproval {
     pub request: ApprovalRequestRecord,
     pub sequence: u64,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PolicyGateState {
     pub run_id: u64,
     pub action: ApprovalAction,
     pub risk: ApprovalRiskClass,
     pub requirement: ApprovalGateRequirement,
-    pub reason: Arc<str>,
+    pub reason: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApprovalState {
     pub policy_tier: PolicyTier,
     pub pending: Option<PendingApproval>,
+    pub active_policy: Option<ReviewPolicy>,
     pub last_decision: Option<ApprovalDecisionRecord>,
     pub last_gate: Option<PolicyGateState>,
     pub next_request_seq: u64,
@@ -404,6 +433,7 @@ impl Default for ApprovalState {
         Self {
             policy_tier: PolicyTier::Balanced,
             pending: None,
+            active_policy: None,
             last_decision: None,
             last_gate: None,
             next_request_seq: 1,
@@ -411,14 +441,17 @@ impl Default for ApprovalState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShellOverlay {
     None,
-    ActionPalette { selected: usize, query: Arc<str> },
+    ActionPalette { selected: usize, query: String },
     Onboarding { step: usize },
+    ConfirmReset,
+    Help,
+    ModelSelection { selected: usize },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum UiTheme {
     Classic,
     Cyberpunk,
@@ -448,6 +481,16 @@ impl UiTheme {
         }
     }
 
+    pub fn prev(self) -> Self {
+        match self {
+            Self::Classic => Self::ForestZen,
+            Self::Cyberpunk => Self::Classic,
+            Self::NeonNoir => Self::Cyberpunk,
+            Self::SolarFlare => Self::NeonNoir,
+            Self::ForestZen => Self::SolarFlare,
+        }
+    }
+
     pub fn accent(self) -> &'static str {
         match self {
             Self::Classic => "cyan",
@@ -459,7 +502,7 @@ impl UiTheme {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum KeymapPreset {
     Standard,
     Mac,
@@ -484,9 +527,9 @@ impl KeymapPreset {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellHeader {
-    pub project_name: Arc<str>,
+    pub project_name: String,
     pub safety_mode: SafetyMode,
     pub scan: ScanStatus,
     pub apply: ApplyStatus,
@@ -494,19 +537,31 @@ pub struct ShellHeader {
     pub risk: RiskLevel,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellRouting {
     pub journey: JourneyStep,
     pub tab: ShellTab,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellInteraction {
     pub overlay: ShellOverlay,
     pub focus_in_chat: bool,
+    #[serde(default)]
+    pub chat_input: String,
+    #[serde(default)]
+    pub is_thinking: bool,
+    #[serde(default)]
+    pub chat_history: Vec<String>,
+    #[serde(default)]
+    pub live_assistant_preview: String,
+    #[serde(default)]
+    pub stream_meta_enabled: bool,
+    #[serde(skip)]
+    pub chat_history_index: Option<usize>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellCustomization {
     pub theme: UiTheme,
     pub keymap_preset: KeymapPreset,
@@ -514,32 +569,63 @@ pub struct ShellCustomization {
     pub show_overview: bool,
     pub show_action_bar: bool,
     pub auto_follow_intent: bool,
+    #[serde(default = "default_input_height")]
+    pub input_height: u16,
+    #[serde(default)]
+    pub focus_mode: bool,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UsageSnapshot {
     pub context_remaining_percent: Option<i64>,
     pub total_tokens: Option<i64>,
-    pub primary_window_label: Option<Arc<str>>,
+    pub primary_window_label: Option<String>,
     pub primary_remaining_percent: Option<u8>,
-    pub secondary_window_label: Option<Arc<str>>,
+    pub secondary_window_label: Option<String>,
     pub secondary_remaining_percent: Option<u8>,
-    pub credits_label: Option<Arc<str>>,
+    pub credits_label: Option<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TelemetrySnapshot {
+    pub cpu_percent: f32,
+    pub mem_used_mb: u64,
+    pub mem_total_mb: u64,
+    pub process_mem_mb: u64,
+    pub gpu_util_percent: Option<f32>,
+    pub gpu_mem_used_mb: Option<u64>,
+    pub gpu_mem_total_mb: Option<u64>,
+    pub gpu_status: Option<String>,
+    pub tokens_per_second: Option<f32>,
+    pub tokens_generated: Option<u64>,
+    pub sample_ts_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TelemetryState {
+    pub latest: TelemetrySnapshot,
+    #[serde(default)]
+    pub cpu_history: Vec<u64>,
+    #[serde(default)]
+    pub mem_history: Vec<u64>,
+    #[serde(default)]
+    pub tps_history: Vec<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SubjectMatterState {
     pub personality: Personality,
     pub persona_policy_defaults: PersonaPolicy,
     pub persona_policy_overrides: PersonaPolicyOverrides,
     pub persona_policy: PersonaPolicy,
     pub skills_enabled_count: usize,
-    pub collaboration_mode_label: Arc<str>,
-    pub model_slug: Option<Arc<str>>,
+    pub collaboration_mode_label: String,
+    pub model_slug: Option<String>,
+    pub model_provider: Option<String>,
     pub reasoning_effort: Option<ReasoningEffort>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct PersonaPolicyOverrides {
     pub tier_ceiling: Option<PolicyTier>,
     pub explanation_depth: Option<ExplanationDepth>,
@@ -554,7 +640,7 @@ impl PersonaPolicyOverrides {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ExplanationDepth {
     Brief,
     Standard,
@@ -571,7 +657,7 @@ impl ExplanationDepth {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PersonaOutputFormat {
     ImpactFirst,
     TechnicalFirst,
@@ -586,22 +672,22 @@ impl PersonaOutputFormat {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PersonaPolicy {
     pub tier_ceiling: PolicyTier,
     pub explanation_depth: ExplanationDepth,
     pub output_format: PersonaOutputFormat,
-    pub tab_order: &'static [ShellTab],
-    pub visible_tools: &'static [&'static str],
+    pub tab_order: Vec<ShellTab>,
+    pub visible_tools: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArtifactError {
     pub kind: ErrorKind,
-    pub message: Arc<str>,
+    pub message: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemArtifact {
     pub schema_version: SchemaVersion,
     pub run_id: u64,
@@ -614,14 +700,14 @@ pub struct SystemArtifact {
     pub error: Option<ArtifactError>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanStep {
     pub id: String,
     pub label: String,
     pub status: StepStatus,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StepStatus {
     Pending,
     Running,
@@ -629,7 +715,7 @@ pub enum StepStatus {
     Failed,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanArtifact {
     pub schema_version: SchemaVersion,
     pub run_id: u64,
@@ -640,7 +726,7 @@ pub struct PlanArtifact {
     pub error: Option<ArtifactError>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiffFileStatus {
     Added,
     Modified,
@@ -648,33 +734,33 @@ pub enum DiffFileStatus {
     Renamed,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffLine {
     pub kind: DiffLineKind,
     pub text: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DiffLineKind {
     Context,
     Add,
     Remove,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffHunk {
     pub header: String,
     pub lines: Vec<DiffLine>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffFile {
     pub path: String,
     pub status: DiffFileStatus,
     pub hunks: Vec<DiffHunk>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffArtifact {
     pub schema_version: SchemaVersion,
     pub run_id: u64,
@@ -684,14 +770,47 @@ pub struct DiffArtifact {
     pub error: Option<ArtifactError>,
 }
 
-#[derive(Debug, Clone)]
+impl DiffArtifact {
+    pub fn analyze_risk(&self) -> ApprovalRiskClass {
+        let mut added = 0;
+        let mut removed = 0;
+        let mut has_destructive_file_ops = false;
+
+        for file in &self.files {
+            if matches!(file.status, DiffFileStatus::Deleted) {
+                has_destructive_file_ops = true;
+            }
+            for hunk in &file.hunks {
+                for line in &hunk.lines {
+                    match line.kind {
+                        DiffLineKind::Add => added += 1,
+                        DiffLineKind::Remove => removed += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        if has_destructive_file_ops {
+            return ApprovalRiskClass::Destructive;
+        }
+
+        if removed > added {
+            return ApprovalRiskClass::Refactor;
+        }
+
+        ApprovalRiskClass::PatchOnly
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyCheck {
     pub name: String,
     pub status: VerifyCheckStatus,
     pub details: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerifyCheckStatus {
     Pending,
     Running,
@@ -700,14 +819,14 @@ pub enum VerifyCheckStatus {
     Skipped,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum VerifyOverall {
     Unknown,
     Passing,
     Failing,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VerifyArtifact {
     pub schema_version: SchemaVersion,
     pub run_id: u64,
@@ -717,7 +836,7 @@ pub struct VerifyArtifact {
     pub error: Option<ArtifactError>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -726,14 +845,14 @@ pub enum LogLevel {
     Error,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogSource {
     App,
     Runtime,
     Shell,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub seq: u64,
     pub level: LogLevel,
@@ -744,7 +863,7 @@ pub struct LogEntry {
     pub run_id: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogBuffer {
     cap: usize,
     next_seq: u64,
@@ -775,7 +894,7 @@ impl LogBuffer {
         self.next_seq = 1;
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &LogEntry> {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = &LogEntry> + '_ {
         self.buf.iter()
     }
 
@@ -784,7 +903,7 @@ impl LogBuffer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellArtifacts {
     pub schema_version: SchemaVersion,
     pub system: Option<SystemArtifact>,
@@ -807,13 +926,13 @@ impl Default for ShellArtifacts {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct RuntimeFlagState {
     pub active: bool,
     pub run_id: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeFlags {
     pub scanning: RuntimeFlagState,
     pub planning: RuntimeFlagState,
@@ -861,18 +980,32 @@ impl RuntimeFlags {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellSelection {
     pub selected_diff_file: Option<String>,
     pub selected_plan_step: Option<String>,
     pub log_level_filter: Option<LogLevel>,
     pub log_search: String,
+    #[serde(default)]
+    pub log_scroll: u16,
+    #[serde(default = "default_true")]
+    pub log_stick_to_bottom: bool,
+    #[serde(default = "default_true")]
+    pub plan_stick_to_running: bool,
+    #[serde(default)]
+    pub expanded_plan_steps: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+fn default_true() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellState {
     pub header: ShellHeader,
     pub usage: UsageSnapshot,
+    #[serde(default)]
+    pub telemetry: TelemetryState,
     pub routing: ShellRouting,
     pub journey_status: JourneyStatus,
     pub interaction: ShellInteraction,
@@ -884,6 +1017,10 @@ pub struct ShellState {
     pub selection: ShellSelection,
     pub thread_id: Option<ThreadId>,
     pub cwd: Option<PathBuf>,
+    #[serde(default)]
+    pub config: Config,
+    #[serde(default)]
+    pub file_browser: FileBrowserState,
 }
 
 const FRIENDLY_VISIBLE_TOOLS: &[&str] = &["scan_repo", "generate_plan", "verify"];
@@ -891,18 +1028,22 @@ const PRAGMATIC_VISIBLE_TOOLS: &[&str] = &["scan_repo", "generate_plan", "comput
 const FRIENDLY_TAB_ORDER: &[ShellTab] = &[
     ShellTab::Chat,
     ShellTab::Overview,
+    ShellTab::Telemetry,
     ShellTab::Plan,
     ShellTab::Explain,
     ShellTab::Diff,
     ShellTab::Logs,
     ShellTab::System,
+    ShellTab::FileBrowser,
 ];
 const PRAGMATIC_TAB_ORDER: &[ShellTab] = &[
     ShellTab::Chat,
+    ShellTab::Telemetry,
     ShellTab::Diff,
     ShellTab::Logs,
     ShellTab::Plan,
     ShellTab::System,
+    ShellTab::FileBrowser,
     ShellTab::Explain,
     ShellTab::Overview,
 ];
@@ -913,16 +1054,37 @@ pub fn persona_policy_for(personality: Personality) -> PersonaPolicy {
             tier_ceiling: PolicyTier::Balanced,
             explanation_depth: ExplanationDepth::Detailed,
             output_format: PersonaOutputFormat::ImpactFirst,
-            tab_order: FRIENDLY_TAB_ORDER,
-            visible_tools: FRIENDLY_VISIBLE_TOOLS,
+            tab_order: FRIENDLY_TAB_ORDER.to_vec(),
+            visible_tools: FRIENDLY_VISIBLE_TOOLS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         },
         Personality::Pragmatic => PersonaPolicy {
             tier_ceiling: PolicyTier::Permissive,
             explanation_depth: ExplanationDepth::Brief,
             output_format: PersonaOutputFormat::TechnicalFirst,
-            tab_order: PRAGMATIC_TAB_ORDER,
-            visible_tools: PRAGMATIC_VISIBLE_TOOLS,
+            tab_order: PRAGMATIC_TAB_ORDER.to_vec(),
+            visible_tools: PRAGMATIC_VISIBLE_TOOLS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         },
+    }
+}
+
+impl Default for ShellSelection {
+    fn default() -> Self {
+        Self {
+            selected_diff_file: None,
+            selected_plan_step: None,
+            log_level_filter: None,
+            log_search: String::new(),
+            log_scroll: 0,
+            log_stick_to_bottom: true,
+            plan_stick_to_running: true,
+            expanded_plan_steps: Vec::new(),
+        }
     }
 }
 
@@ -941,8 +1103,12 @@ pub fn apply_persona_policy_overrides(
     }
 }
 
+fn default_input_height() -> u16 {
+    3
+}
+
 impl ShellState {
-    pub fn new(project_name: String, personality: Personality) -> Self {
+    pub fn new(project_name: String, personality: Personality, config: Config) -> Self {
         let persona_policy_defaults = persona_policy_for(personality);
         let persona_policy_overrides = PersonaPolicyOverrides::default();
         Self {
@@ -955,6 +1121,7 @@ impl ShellState {
                 risk: RiskLevel::Low,
             },
             usage: UsageSnapshot::default(),
+            telemetry: TelemetryState::default(),
             routing: ShellRouting {
                 journey: JourneyStep::Idea,
                 tab: persona_policy_defaults.tab_order[0],
@@ -967,7 +1134,13 @@ impl ShellState {
             },
             interaction: ShellInteraction {
                 overlay: ShellOverlay::None,
-                focus_in_chat: true,
+                focus_in_chat: false,
+                chat_input: String::new(),
+                is_thinking: false,
+                chat_history: Vec::new(),
+                live_assistant_preview: String::new(),
+                stream_meta_enabled: false,
+                chat_history_index: None,
             },
             customization: ShellCustomization {
                 theme: UiTheme::Classic,
@@ -980,18 +1153,21 @@ impl ShellState {
                 show_overview: true,
                 show_action_bar: false,
                 auto_follow_intent: false,
+                input_height: 3,
+                focus_mode: false,
             },
             sm: SubjectMatterState {
                 personality,
-                persona_policy_defaults,
+                persona_policy_defaults: persona_policy_defaults.clone(),
                 persona_policy_overrides,
                 persona_policy: apply_persona_policy_overrides(
-                    persona_policy_defaults,
+                    persona_policy_defaults.clone(),
                     persona_policy_overrides,
                 ),
                 skills_enabled_count: 0,
                 collaboration_mode_label: "code".into(),
-                model_slug: None,
+                model_slug: config.model.default_model.clone(),
+                model_provider: config.model.default_provider.clone(),
                 reasoning_effort: None,
             },
             artifacts: ShellArtifacts::default(),
@@ -1000,6 +1176,8 @@ impl ShellState {
             selection: ShellSelection::default(),
             thread_id: None,
             cwd: None,
+            config,
+            file_browser: FileBrowserState::default(),
         }
     }
 
@@ -1035,8 +1213,8 @@ impl ShellState {
             .max(self.journey_status.active_run_id)
     }
 
-    pub fn ordered_tabs(&self) -> &'static [ShellTab] {
-        self.sm.persona_policy.tab_order
+    pub fn ordered_tabs(&self) -> &[ShellTab] {
+        &self.sm.persona_policy.tab_order
     }
 
     pub fn next_tab(&self) -> ShellTab {
@@ -1217,15 +1395,15 @@ pub fn policy_requirement_for_risk(
     match tier {
         PolicyTier::Strict => match risk {
             ApprovalRiskClass::ReadOnly => ApprovalGateRequirement::Allow,
-            ApprovalRiskClass::PatchOnly | ApprovalRiskClass::Execution => {
-                ApprovalGateRequirement::RequireApproval
-            }
+            ApprovalRiskClass::PatchOnly
+            | ApprovalRiskClass::Refactor
+            | ApprovalRiskClass::Execution => ApprovalGateRequirement::RequireApproval,
             ApprovalRiskClass::Destructive => ApprovalGateRequirement::Deny,
         },
         PolicyTier::Balanced => match risk {
-            ApprovalRiskClass::ReadOnly | ApprovalRiskClass::PatchOnly => {
-                ApprovalGateRequirement::Allow
-            }
+            ApprovalRiskClass::ReadOnly
+            | ApprovalRiskClass::PatchOnly
+            | ApprovalRiskClass::Refactor => ApprovalGateRequirement::Allow,
             ApprovalRiskClass::Execution | ApprovalRiskClass::Destructive => {
                 ApprovalGateRequirement::RequireApproval
             }
@@ -1234,6 +1412,7 @@ pub fn policy_requirement_for_risk(
             ApprovalRiskClass::Destructive => ApprovalGateRequirement::RequireApproval,
             ApprovalRiskClass::ReadOnly
             | ApprovalRiskClass::PatchOnly
+            | ApprovalRiskClass::Refactor
             | ApprovalRiskClass::Execution => ApprovalGateRequirement::Allow,
         },
     }

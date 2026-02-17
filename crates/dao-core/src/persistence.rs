@@ -246,9 +246,7 @@ pub fn replay_workflow_from(
                     }
                 }
             }
-            PersistedShellEvent::ToolResultRecorded {
-                run_id, status, ..
-            } => {
+            PersistedShellEvent::ToolResultRecorded { run_id, status, .. } => {
                 if let Some(run) = latest.as_mut() {
                     if run.run_id == run_id && status == "succeeded" {
                         run.step_index = run.step_index.saturating_add(1);
@@ -353,14 +351,14 @@ fn append_line(path: &Path, line: &str) -> std::io::Result<()> {
 mod tests {
     use tempfile::tempdir;
 
+    use super::replay_latest_workflow;
+    use super::replay_workflow_from;
     use super::PersistedExecutionMode;
     use super::PersistedPersonaPolicy;
     use super::PersistedShellEvent;
     use super::PersistedShellSnapshot;
     use super::PersistedWorkflowStatus;
     use super::ShellEventStore;
-    use super::replay_latest_workflow;
-    use super::replay_workflow_from;
     use pretty_assertions::assert_eq;
 
     fn policy() -> PersistedPersonaPolicy {
