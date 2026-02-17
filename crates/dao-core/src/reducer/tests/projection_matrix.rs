@@ -108,12 +108,10 @@ fn artifact_error_does_not_force_failed_journey() {
     run_runtime(&mut state, RuntimeAction::SetVerifyArtifact(verify));
 
     assert_ne!(state.journey_status.state, JourneyState::Failed);
-    assert!(
-        state
-            .artifacts
-            .verify
-            .as_ref()
-            .and_then(|artifact| artifact.error.as_ref())
-            .is_some()
-    );
+    assert!(state
+        .artifacts
+        .verify
+        .as_ref()
+        .and_then(|artifact| artifact.error.as_ref())
+        .is_some());
 }

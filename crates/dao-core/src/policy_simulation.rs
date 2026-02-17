@@ -1,9 +1,9 @@
+use crate::state::policy_requirement_for_risk;
 use crate::state::ApprovalGateRequirement;
 use crate::state::PolicyTier;
-use crate::state::policy_requirement_for_risk;
+use crate::tool_registry::tier_satisfies;
 use crate::tool_registry::ToolId;
 use crate::tool_registry::ToolRegistry;
-use crate::tool_registry::tier_satisfies;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ToolPolicyOutcome {
@@ -84,8 +84,8 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
-    use crate::workflow::WorkflowTemplateId;
     use crate::workflow::workflow_template;
+    use crate::workflow::WorkflowTemplateId;
 
     #[test]
     fn strict_policy_blocks_tools_below_minimum_tier() {

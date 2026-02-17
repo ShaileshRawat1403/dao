@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use dao_core::actions::RuntimeAction;
 use dao_core::actions::ShellAction;
+use dao_core::config::Config;
 use dao_core::persistence::replay_latest_workflow;
 use dao_core::persistence::replay_workflow_from;
 use dao_core::persistence::PersistedExecutionMode;
@@ -22,6 +23,7 @@ use dao_core::reducer::reduce;
 use dao_core::state::ApprovalAction;
 use dao_core::state::ApprovalDecisionKind;
 use dao_core::state::ApprovalDecisionRecord;
+use dao_core::state::ApprovalGateRequirement;
 use dao_core::state::ApprovalRequestRecord;
 use dao_core::state::ArtifactError;
 use dao_core::state::DiffArtifact;
@@ -50,12 +52,15 @@ use dao_core::tool_registry::ToolId;
 use dao_core::tool_registry::ToolRegistry;
 use dao_core::workflow::workflow_template;
 use dao_core::workflow::WorkflowTemplateId;
+use dao_core::ReviewPolicy;
 use dao_exec::contracts::ToolInvocation;
 use dao_exec::contracts::ToolInvocationStatus;
-use dao_exec::executor::SimulatedToolExecutor;
+use dao_exec::executor::RuntimeToolExecutor;
 use dao_exec::executor::ToolExecutionContext;
 use dao_exec::executor::ToolExecutionPayload;
 use dao_exec::executor::ToolExecutor;
+
+mod ui;
 
 fn main() {
     if let Err(err) = run() {
@@ -84,13 +89,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         "run" => {
-            let repo = parse_repo_arg(args.collect::<Vec<_>>())?;
-            run_workflow(repo)
+            let (repo, policy, model, provider, intent) = parse_cli_args(args.collect::<Vec<_>>())?;
+            run_workflow(repo, policy, model, provider, intent)
         }
         "replay" => replay_workflow(args.collect::<Vec<_>>()),
         "resume" => {
-            let repo = parse_repo_arg(args.collect::<Vec<_>>())?;
-            resume_workflow(repo)
+            let (repo, policy, model, provider, intent) = parse_cli_args(args.collect::<Vec<_>>())?;
+            resume_workflow(repo, policy, model, provider, intent)
+        }
+        "ui" => {
+            let (repo, _, model, provider, _) = parse_cli_args(args.collect::<Vec<_>>())?;
+            start_ui(repo, model, provider)
+        }
+        "chat" => {
+            let (message, model, provider) = parse_chat_args(args.collect::<Vec<_>>())?;
+            // If message is empty, ShellAdapter::chat will start interactive mode
+            dao_exec::ShellAdapter::chat(provider.as_deref(), model.as_deref(), &message);
+            Ok(())
         }
         _ => {
             print_help();
@@ -99,8 +114,23 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn parse_repo_arg(args: Vec<String>) -> Result<PathBuf, Box<dyn std::error::Error>> {
+fn parse_cli_args(
+    args: Vec<String>,
+) -> Result<
+    (
+        PathBuf,
+        Option<PathBuf>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ),
+    Box<dyn std::error::Error>,
+> {
     let mut repo = None;
+    let mut policy = None;
+    let mut model = None;
+    let mut provider = None;
+    let mut intent_words = Vec::new();
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -111,12 +141,83 @@ fn parse_repo_arg(args: Vec<String>) -> Result<PathBuf, Box<dyn std::error::Erro
                 repo = Some(PathBuf::from(value));
                 i += 2;
             }
+            "--policy" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err("--policy requires a path".into());
+                };
+                policy = Some(PathBuf::from(value));
+                i += 2;
+            }
+            "--model" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err("--model requires a name".into());
+                };
+                model = Some(value.clone());
+                i += 2;
+            }
+            "--provider" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err("--provider requires a name".into());
+                };
+                provider = Some(value.clone());
+                i += 2;
+            }
             other => {
-                return Err(format!("unsupported argument: {other}").into());
+                if other.starts_with('-') {
+                    return Err(format!("unsupported argument: {other}").into());
+                }
+                intent_words.push(other.to_string());
+                i += 1;
             }
         }
     }
-    Ok(repo.unwrap_or_else(|| PathBuf::from(".")))
+    let intent = if intent_words.is_empty() {
+        None
+    } else {
+        Some(intent_words.join(" "))
+    };
+    Ok((
+        repo.unwrap_or_else(|| PathBuf::from(".")),
+        policy,
+        model,
+        provider,
+        intent,
+    ))
+}
+
+fn parse_chat_args(
+    args: Vec<String>,
+) -> Result<(String, Option<String>, Option<String>), Box<dyn std::error::Error>> {
+    let mut model = None;
+    let mut provider = None;
+    let mut words = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--model" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err("--model requires a name".into());
+                };
+                model = Some(value.clone());
+                i += 2;
+            }
+            "--provider" => {
+                let Some(value) = args.get(i + 1) else {
+                    return Err("--provider requires a name".into());
+                };
+                provider = Some(value.clone());
+                i += 2;
+            }
+            other => {
+                if other.starts_with('-') {
+                    return Err(format!("unsupported argument: {other}").into());
+                }
+                words.push(other.to_string());
+                i += 1;
+            }
+        }
+    }
+    Ok((words.join(" "), model, provider))
 }
 
 fn replay_workflow(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
@@ -184,7 +285,46 @@ fn replay_workflow(args: Vec<String>) -> Result<(), Box<dyn std::error::Error>> 
     Ok(())
 }
 
-fn run_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn start_ui(
+    repo: PathBuf,
+    model: Option<String>,
+    provider: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = repo.canonicalize()?;
+    let mut config = load_config()?;
+    if let Some(model) = model {
+        config.model.default_model = Some(model);
+    }
+    if let Some(provider) = provider {
+        config.model.default_provider = Some(provider);
+    }
+    let mut state = load_shell_state(&repo)?.unwrap_or_else(|| {
+        ShellState::new(repo_name(&repo), Personality::Pragmatic, config.clone())
+    });
+    if let Some(model) = config.model.default_model.clone() {
+        reduce(
+            &mut state,
+            ShellAction::Runtime(RuntimeAction::SetModelSlug(Some(model))),
+        );
+    }
+    if let Some(provider) = config.model.default_provider.clone() {
+        reduce(
+            &mut state,
+            ShellAction::Runtime(RuntimeAction::SetModelProvider(Some(provider))),
+        );
+    }
+    state.cwd = Some(repo.clone());
+    state.file_browser.current_path = repo.clone();
+    ui::run(state, repo)
+}
+
+fn run_workflow(
+    repo: PathBuf,
+    policy_path: Option<PathBuf>,
+    model: Option<String>,
+    provider: Option<String>,
+    intent: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = repo.canonicalize()?;
     let (mut store, snapshot_path) = open_store_for_repo(&repo)?;
 
@@ -199,7 +339,25 @@ fn run_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         .and_then(|name| name.to_str())
         .unwrap_or("repo")
         .to_string();
-    let mut state = ShellState::new(project_name, Personality::Pragmatic);
+
+    let mut config = load_config()?;
+    if let Some(model) = model.clone() {
+        config.model.default_model = Some(model);
+    }
+    if let Some(provider) = provider.clone() {
+        config.model.default_provider = Some(provider);
+    }
+    let mut state = ShellState::new(project_name, Personality::Pragmatic, config);
+
+    if let Some(path) = policy_path {
+        println!("Loading review policy from {}", path.display());
+        let content = fs::read_to_string(&path)?;
+        let policy: ReviewPolicy = serde_yaml::from_str(&content)?;
+        reduce(
+            &mut state,
+            ShellAction::Runtime(RuntimeAction::SetReviewPolicy(policy)),
+        );
+    }
     let policy_tier = state.approval.policy_tier;
 
     let seq = store.append(PersistedShellEvent::WorkflowRunStarted {
@@ -229,11 +387,20 @@ fn run_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         0,
         1,
         policy_tier,
+        model,
+        provider,
+        intent,
         None,
     )
 }
 
-fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+fn resume_workflow(
+    repo: PathBuf,
+    policy_path: Option<PathBuf>,
+    model: Option<String>,
+    provider: Option<String>,
+    intent: Option<String>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let repo = repo.canonicalize()?;
     let (mut store, snapshot_path) = open_store_for_repo(&repo)?;
     let records = store.load()?;
@@ -293,7 +460,17 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             let seq = store.append(PersistedShellEvent::WorkflowResumed { run_id: run.run_id })?;
             save_snapshots(&store, &snapshot_path, seq)?;
 
-            let mut state = ShellState::new(repo_name(&repo), Personality::Pragmatic);
+            let mut state =
+                ShellState::new(repo_name(&repo), Personality::Pragmatic, load_config()?);
+            if let Some(path) = &policy_path {
+                println!("Loading review policy from {}", path.display());
+                let content = fs::read_to_string(path)?;
+                let policy: ReviewPolicy = serde_yaml::from_str(&content)?;
+                reduce(
+                    &mut state,
+                    ShellAction::Runtime(RuntimeAction::SetReviewPolicy(policy)),
+                );
+            }
             let policy_tier = policy_tier_for_run(run.run_id, &records);
             return execute_workflow(
                 &repo,
@@ -304,6 +481,9 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 run.step_index,
                 run.next_invocation_id,
                 policy_tier,
+                model,
+                provider,
+                intent,
                 Some(pending_invocation_id),
             );
         }
@@ -318,7 +498,17 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
             let seq = store.append(PersistedShellEvent::WorkflowResumed { run_id: run.run_id })?;
             save_snapshots(&store, &snapshot_path, seq)?;
 
-            let mut state = ShellState::new(repo_name(&repo), Personality::Pragmatic);
+            let mut state =
+                ShellState::new(repo_name(&repo), Personality::Pragmatic, load_config()?);
+            if let Some(path) = &policy_path {
+                println!("Loading review policy from {}", path.display());
+                let content = fs::read_to_string(path)?;
+                let policy: ReviewPolicy = serde_yaml::from_str(&content)?;
+                reduce(
+                    &mut state,
+                    ShellAction::Runtime(RuntimeAction::SetReviewPolicy(policy)),
+                );
+            }
             let policy_tier = policy_tier_for_run(run.run_id, &records);
             execute_workflow(
                 &repo,
@@ -329,6 +519,9 @@ fn resume_workflow(repo: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
                 run.step_index,
                 run.next_invocation_id,
                 policy_tier,
+                model,
+                provider,
+                intent,
                 None,
             )
         }
@@ -345,36 +538,60 @@ fn execute_workflow(
     start_step: usize,
     start_next_invocation: u64,
     policy_tier: PolicyTier,
+    model: Option<String>,
+    _provider: Option<String>,
+    intent: Option<String>,
     first_invocation_override: Option<u64>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let template = workflow_template(WorkflowTemplateId::ScanPlanDiffVerify);
-    let executor = SimulatedToolExecutor;
-    let context = ToolExecutionContext { cwd: repo };
+    let executor = RuntimeToolExecutor;
+    let context = ToolExecutionContext {
+        cwd: repo,
+        model: model.as_deref(),
+        intent: intent.as_deref(),
+    };
     let mut next_invocation_id = start_next_invocation.max(1);
     let mut first_override = first_invocation_override;
 
     for (step_index, step) in template.steps.iter().enumerate().skip(start_step) {
         let spec = ToolRegistry::get(step.tool_id);
         let sim = simulate_tool(policy_tier, step.tool_id);
+
+        let mut risk = spec.risk_class;
+        // If a diff exists and we are past the diff generation step, use the diff's calculated risk
+        if step_index > 2 {
+            if let Some(diff) = &state.artifacts.diff {
+                risk = diff.analyze_risk();
+            }
+        }
+
+        let reason = intent.clone().unwrap_or_else(|| sim.reason.to_string());
+
         reduce(
             state,
             ShellAction::Runtime(RuntimeAction::AssessPolicyGate {
                 run_id,
                 action: ApprovalAction::Execute,
-                risk: spec.risk_class,
-                reason: sim.reason.to_string(),
+                risk,
+                reason,
             }),
         );
 
-        if sim.blocked {
+        let gate = state
+            .approval
+            .last_gate
+            .as_ref()
+            .expect("Gate state should be set by AssessPolicyGate");
+
+        if gate.requirement == ApprovalGateRequirement::Deny {
             let seq = store.append(PersistedShellEvent::WorkflowStatusChanged {
                 run_id,
                 status: PersistedWorkflowStatus::Blocked,
                 step_index,
-                reason: Some(sim.reason.to_string()),
+                reason: Some(gate.reason.to_string()),
             })?;
             save_snapshots(store, snapshot_path, seq)?;
-            println!("workflow blocked at {}: {}", step.step_id, sim.reason);
+            println!("🛑 Policy Blocked at {}: {}", step.step_id, gate.reason);
             return Ok(());
         }
 
@@ -384,14 +601,16 @@ fn execute_workflow(
             next_invocation_id
         };
 
-        if sim.requirement.label() == "require-approval" && first_override.is_none() {
+        if gate.requirement == ApprovalGateRequirement::RequireApproval && first_override.is_none()
+        {
+            println!("⚠️  Approval Required: {}", gate.reason);
             let request_id = format!("req-{run_id}-{invocation_id}");
             let request = ApprovalRequestRecord {
                 request_id: request_id.clone(),
                 run_id,
                 action: ApprovalAction::Execute,
                 risk: spec.risk_class,
-                reason: sim.reason.to_string().into(),
+                reason: gate.reason.clone(),
                 preview: format!("workflow tool {}", step.tool_id.as_str()).into(),
                 created_at_ms: None,
             };
@@ -513,6 +732,32 @@ fn execute_workflow(
         }
     }
 
+    // Auto-commit if the workflow completed successfully and we have an intent
+    if intent.is_some() {
+        println!("Committing changes...");
+        let invocation = ToolInvocation {
+            run_id,
+            invocation_id: next_invocation_id,
+            tool_id: "git_commit".to_string(),
+            requested_tier: policy_tier.label().to_string(),
+        };
+        store.append(PersistedShellEvent::ToolInvocationIssued {
+            run_id,
+            invocation_id: next_invocation_id,
+            tool_id: "git_commit".to_string(),
+        })?;
+
+        let outcome = executor.execute(invocation, &context);
+        apply_execution_outcome(
+            state,
+            run_id,
+            next_invocation_id,
+            payload_to_result(ToolId::ScanRepo, outcome.payload), // Use ScanRepo as placeholder since Unknown doesn't exist
+            &outcome.result.logs,
+        );
+    }
+
+    save_shell_state(repo, state)?;
     let seq = store.append(PersistedShellEvent::WorkflowStatusChanged {
         run_id,
         status: PersistedWorkflowStatus::Completed,
@@ -530,6 +775,9 @@ fn execute_workflow(
         "snapshot: {}",
         store_path(repo).join("snapshot.json").display()
     );
+
+    // Auto-open UI after workflow completion
+    start_ui(repo.to_path_buf(), None, None)?;
     Ok(())
 }
 
@@ -538,6 +786,7 @@ enum StepResult {
     Plan(PlanArtifact),
     Diff(DiffArtifact),
     Verify(VerifyArtifact),
+    Commit(SystemArtifact),
 }
 
 fn payload_to_result(tool_id: ToolId, payload: ToolExecutionPayload) -> StepResult {
@@ -581,30 +830,12 @@ fn payload_to_result(tool_id: ToolId, payload: ToolExecutionPayload) -> StepResu
             })
         }
         (ToolId::ComputeDiff, ToolExecutionPayload::Diff { unified_diff }) => {
+            let files = legacy_diff_files_from_text(&unified_diff);
             StepResult::Diff(DiffArtifact {
                 schema_version: ARTIFACT_SCHEMA_V1,
                 run_id: 0,
                 artifact_id: 0,
-                files: vec![DiffFile {
-                    path: "workflow.diff".to_string(),
-                    status: DiffFileStatus::Modified,
-                    hunks: vec![DiffHunk {
-                        header: "@@".to_string(),
-                        lines: unified_diff
-                            .lines()
-                            .map(|line| DiffLine {
-                                kind: if line.starts_with('+') {
-                                    DiffLineKind::Add
-                                } else if line.starts_with('-') {
-                                    DiffLineKind::Remove
-                                } else {
-                                    DiffLineKind::Context
-                                },
-                                text: line.to_string(),
-                            })
-                            .collect(),
-                    }],
-                }],
+                files,
                 summary: "Diff preview".to_string(),
                 error: None,
             })
@@ -641,6 +872,17 @@ fn payload_to_result(tool_id: ToolId, payload: ToolExecutionPayload) -> StepResu
                 },
             })
         }
+        (_, ToolExecutionPayload::Commit { hash, message }) => StepResult::Commit(SystemArtifact {
+            schema_version: ARTIFACT_SCHEMA_V1,
+            run_id: 0,
+            artifact_id: 0,
+            repo_root: String::new(),
+            detected_stack: Vec::new(),
+            entrypoints: Vec::new(),
+            risk_flags: Vec::new(),
+            summary: format!("Committed {}: {}", hash, message),
+            error: None,
+        }),
         (_, _) => StepResult::Plan(PlanArtifact {
             schema_version: ARTIFACT_SCHEMA_V1,
             run_id: 0,
@@ -654,6 +896,111 @@ fn payload_to_result(tool_id: ToolId, payload: ToolExecutionPayload) -> StepResu
             }),
         }),
     }
+}
+
+fn legacy_diff_files_from_text(text: &str) -> Vec<DiffFile> {
+    let mut files = Vec::new();
+    let mut current_file: Option<DiffFile> = None;
+    let mut current_hunk: Option<DiffHunk> = None;
+
+    let finish_hunk = |file: &mut Option<DiffFile>, hunk: &mut Option<DiffHunk>| {
+        if let Some(hunk_value) = hunk.take() {
+            if let Some(file_value) = file.as_mut() {
+                file_value.hunks.push(hunk_value);
+            }
+        }
+    };
+
+    let finish_file =
+        |files: &mut Vec<DiffFile>, file: &mut Option<DiffFile>, hunk: &mut Option<DiffHunk>| {
+            finish_hunk(file, hunk);
+            if let Some(file_value) = file.take() {
+                files.push(file_value);
+            }
+        };
+
+    for line in text.lines() {
+        if let Some(path) = line.strip_prefix("+++ b/") {
+            finish_file(&mut files, &mut current_file, &mut current_hunk);
+            current_file = Some(DiffFile {
+                path: path.to_string(),
+                status: DiffFileStatus::Modified,
+                hunks: Vec::new(),
+            });
+            continue;
+        }
+
+        if let Some(path) = line.strip_prefix("+++ ") {
+            finish_file(&mut files, &mut current_file, &mut current_hunk);
+            current_file = Some(DiffFile {
+                path: path.to_string(),
+                status: DiffFileStatus::Modified,
+                hunks: Vec::new(),
+            });
+            continue;
+        }
+
+        if let Some(header) = line.strip_prefix("@@") {
+            finish_hunk(&mut current_file, &mut current_hunk);
+            current_hunk = Some(DiffHunk {
+                header: format!("@@{header}"),
+                lines: Vec::new(),
+            });
+            continue;
+        }
+
+        let kind = if line.starts_with('+') {
+            Some(DiffLineKind::Add)
+        } else if line.starts_with('-') {
+            Some(DiffLineKind::Remove)
+        } else if !line.is_empty() {
+            Some(DiffLineKind::Context)
+        } else {
+            None
+        };
+
+        if let Some(kind) = kind {
+            if current_hunk.is_none() {
+                current_hunk = Some(DiffHunk {
+                    header: "@@".to_string(),
+                    lines: Vec::new(),
+                });
+            }
+            if let Some(hunk) = current_hunk.as_mut() {
+                hunk.lines.push(DiffLine {
+                    kind,
+                    text: line.to_string(),
+                });
+            }
+        }
+    }
+
+    finish_file(&mut files, &mut current_file, &mut current_hunk);
+
+    if files.is_empty() {
+        files.push(DiffFile {
+            path: "<patch>".to_string(),
+            status: DiffFileStatus::Modified,
+            hunks: vec![DiffHunk {
+                header: "@@".to_string(),
+                lines: text
+                    .lines()
+                    .map(|line| DiffLine {
+                        kind: if line.starts_with('+') {
+                            DiffLineKind::Add
+                        } else if line.starts_with('-') {
+                            DiffLineKind::Remove
+                        } else {
+                            DiffLineKind::Context
+                        },
+                        text: line.to_string(),
+                    })
+                    .collect(),
+            }],
+        });
+    }
+
+    files
 }
 
 fn apply_execution_outcome(
@@ -694,6 +1041,14 @@ fn apply_execution_outcome(
             reduce(
                 state,
                 ShellAction::Runtime(RuntimeAction::SetVerifyArtifact(artifact)),
+            );
+        }
+        StepResult::Commit(mut artifact) => {
+            artifact.run_id = run_id;
+            artifact.artifact_id = artifact_id;
+            reduce(
+                state,
+                ShellAction::Runtime(RuntimeAction::SetSystemArtifact(artifact)),
             );
         }
     }
@@ -754,6 +1109,23 @@ fn load_snapshot_preferred(
     Ok(store.load_snapshot()?)
 }
 
+fn save_shell_state(repo: &Path, state: &ShellState) -> Result<(), Box<dyn std::error::Error>> {
+    let path = store_path(repo).join("state.json");
+    let bytes = serde_json::to_vec_pretty(state)?;
+    fs::write(path, bytes)?;
+    Ok(())
+}
+
+fn load_shell_state(repo: &Path) -> Result<Option<ShellState>, Box<dyn std::error::Error>> {
+    let path = store_path(repo).join("state.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = fs::read(path)?;
+    let state: ShellState = serde_json::from_slice(&bytes)?;
+    Ok(Some(state))
+}
+
 fn save_snapshots(
     store: &ShellEventStore,
     snapshot_path: &Path,
@@ -781,6 +1153,18 @@ fn repo_name(repo: &Path) -> String {
         .and_then(|name| name.to_str())
         .unwrap_or("repo")
         .to_string()
+}
+
+fn load_config() -> Result<Config, Box<dyn std::error::Error>> {
+    if let Some(config_dir) = dirs::config_dir() {
+        let config_path = config_dir.join("dao").join("config.toml");
+        if config_path.exists() {
+            let content = fs::read_to_string(config_path)?;
+            let config: Config = toml::from_str(&content)?;
+            return Ok(config);
+        }
+    }
+    Ok(Config::default())
 }
 
 fn parse_tool_id(raw: &str) -> Result<ToolId, Box<dyn std::error::Error>> {
@@ -860,9 +1244,11 @@ fn print_help() {
     );
     println!("dao {}", env!("CARGO_PKG_VERSION"));
     println!("Usage:");
-    println!("  dao run --repo PATH");
+    println!("  dao run --repo PATH [--policy PATH] [--model NAME] [--provider NAME]");
     println!("  dao replay --last --repo PATH");
-    println!("  dao resume --repo PATH");
+    println!("  dao resume --repo PATH [--policy PATH] [--model NAME] [--provider NAME]");
+    println!("  dao ui [--repo PATH] [--model NAME] [--provider NAME]");
+    println!("  dao chat [--model NAME] [--provider NAME] [message]");
     println!("  dao --help");
     println!("  dao --version");
 }

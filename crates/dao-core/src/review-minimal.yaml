@@ -1,0 +1,32 @@
+policy:
+  id: "review-minimal"
+  version: "0.1"
+  mode: "deny_by_default"
+  precedence: "first_match"
+  applies_to:
+    branches: ["*"]
+  defaults:
+    approval:
+      required: 1
+      roles: ["maintainer"]
+      justification_required: true
+    evidence_required: ["diff", "tests"]
+  rules:
+    - id: "block-secrets"
+      when: "security.secrets.detected == true"
+      then:
+        action: "block"
+        message: "Secrets detected. Remove secrets before proceeding."
+
+    - id: "require-approval-large-change"
+      when: "diff.files_changed >= 30"
+      then:
+        action: "require_approval"
+        message: "Large change set. Requires extra review."
+        required: 2
+
+    - id: "allow-small-clean-change"
+      when: "tests.passed == true and diff.files_changed < 10"
+      then:
+        action: "allow"
+        message: "Small, verified change."

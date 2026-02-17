@@ -19,3 +19,10 @@ dao-core = { path = "../dao-core" }
 dao-exec = { path = "../dao-exec" }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
+ratatui = "0.29.0"
+crossterm = "0.28.1"
+syntect = "5.2"
+arboard = "3.3"
+dirs = "5.0"
+toml = "0.8"

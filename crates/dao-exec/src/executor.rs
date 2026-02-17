@@ -3,6 +3,7 @@ use std::path::Path;
 use std::process::Command;
 use std::process::Output;
 
+use crate::adapters::ShellAdapter;
 use crate::contracts::ToolInvocation;
 use crate::contracts::ToolInvocationStatus;
 use crate::contracts::ToolResult;
@@ -25,6 +26,10 @@ pub enum ToolExecutionPayload {
         checks: Vec<String>,
         passing: bool,
     },
+    Commit {
+        hash: String,
+        message: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -35,6 +40,8 @@ pub struct ToolExecutionOutcome {
 
 pub struct ToolExecutionContext<'a> {
     pub cwd: &'a Path,
+    pub model: Option<&'a str>,
+    pub intent: Option<&'a str>,
 }
 
 pub trait ToolExecutor {
@@ -81,6 +88,10 @@ impl ToolExecutor for SimulatedToolExecutor {
                 checks: vec!["Simulated check".to_string()],
                 passing: true,
             },
+            "git_commit" => ToolExecutionPayload::Commit {
+                hash: "a1b2c3d".to_string(),
+                message: "Simulated commit".to_string(),
+            },
             _ => ToolExecutionPayload::Plan { steps: Vec::new() },
         };
 
@@ -103,9 +114,10 @@ impl ToolExecutor for RuntimeToolExecutor {
     ) -> ToolExecutionOutcome {
         match invocation.tool_id.as_str() {
             "scan_repo" => execute_scan(invocation, context.cwd),
-            "generate_plan" => execute_plan(invocation, context.cwd),
+            "generate_plan" => execute_plan(invocation, context.cwd, context.model, context.intent),
             "compute_diff" => execute_diff(invocation, context.cwd),
             "verify" => execute_verify(invocation, context.cwd),
+            "git_commit" => execute_commit(invocation, context.cwd, context.intent),
             _ => ToolExecutionOutcome {
                 result: build_result(
                     invocation,
@@ -180,29 +192,23 @@ fn execute_scan(invocation: ToolInvocation, cwd: &Path) -> ToolExecutionOutcome 
     }
 }
 
-fn execute_plan(invocation: ToolInvocation, cwd: &Path) -> ToolExecutionOutcome {
-    let mut steps = Vec::new();
-    if cwd.join("Cargo.toml").exists() {
-        steps.push("Inspect Rust workspace and affected crates".to_string());
-        steps.push("Implement targeted changes and keep clippy clean".to_string());
-        steps.push("Run crate tests and validate behavior".to_string());
-    } else if cwd.join("package.json").exists() {
-        steps.push("Inspect JavaScript/TypeScript project layout".to_string());
-        steps.push("Implement scoped code changes".to_string());
-        steps.push("Run lint/tests and validate outputs".to_string());
-    } else {
-        steps.push("Inspect project layout and key files".to_string());
-        steps.push("Propose minimal implementation changes".to_string());
-        steps.push("Validate behavior with available checks".to_string());
-    }
+fn execute_plan(
+    invocation: ToolInvocation,
+    cwd: &Path,
+    model: Option<&str>,
+    intent: Option<&str>,
+) -> ToolExecutionOutcome {
+    // Default task description since we don't have user intent passed down yet
+    let task = intent.unwrap_or("Analyze repository structure and plan next steps");
+    let payload = ShellAdapter::generate_plan(cwd, task, model);
 
     ToolExecutionOutcome {
         result: build_result(
             invocation,
             ToolInvocationStatus::Succeeded,
-            vec![format!("plan generated for {}", cwd.display())],
+            vec!["plan generated via ShellAdapter".to_string()],
         ),
-        payload: ToolExecutionPayload::Plan { steps },
+        payload,
     }
 }
 
@@ -277,12 +283,81 @@ fn execute_verify(invocation: ToolInvocation, cwd: &Path) -> ToolExecutionOutcom
     }
 }
 
+fn execute_commit(
+    invocation: ToolInvocation,
+    cwd: &Path,
+    intent: Option<&str>,
+) -> ToolExecutionOutcome {
+    let message = intent.unwrap_or("chore: automated update");
+
+    // Stage all changes first
+    if let Err(err) = run_git(cwd, ["add", "."]) {
+        return ToolExecutionOutcome {
+            result: build_result(
+                invocation,
+                ToolInvocationStatus::Failed,
+                vec![format!("git add failed: {err}")],
+            ),
+            payload: ToolExecutionPayload::Commit {
+                hash: String::new(),
+                message: String::new(),
+            },
+        };
+    }
+
+    match run_git(cwd, ["commit", "-m", message]) {
+        Ok(output) => {
+            if output.status.success() {
+                let hash = run_git(cwd, ["rev-parse", "--short", "HEAD"])
+                    .map(|o| stdout_text(&o).trim().to_string())
+                    .unwrap_or_else(|_| "???????".to_string());
+
+                ToolExecutionOutcome {
+                    result: build_result(
+                        invocation,
+                        ToolInvocationStatus::Succeeded,
+                        vec![format!("committed as {}", hash)],
+                    ),
+                    payload: ToolExecutionPayload::Commit {
+                        hash,
+                        message: message.to_string(),
+                    },
+                }
+            } else {
+                ToolExecutionOutcome {
+                    result: build_result(
+                        invocation,
+                        ToolInvocationStatus::Failed,
+                        vec![stdout_text(&output)],
+                    ),
+                    payload: ToolExecutionPayload::Commit {
+                        hash: String::new(),
+                        message: String::new(),
+                    },
+                }
+            }
+        }
+        Err(err) => ToolExecutionOutcome {
+            result: build_result(
+                invocation,
+                ToolInvocationStatus::Failed,
+                vec![format!("git commit failed: {err}")],
+            ),
+            payload: ToolExecutionPayload::Commit {
+                hash: String::new(),
+                message: String::new(),
+            },
+        },
+    }
+}
+
 fn emitted_artifacts(tool_id: &str) -> Vec<String> {
     match tool_id {
         "scan_repo" => vec!["system".to_string(), "logs".to_string()],
         "generate_plan" => vec!["plan".to_string(), "logs".to_string()],
         "compute_diff" => vec!["diff".to_string(), "logs".to_string()],
         "verify" => vec!["verify".to_string(), "logs".to_string()],
+        "git_commit" => vec!["system".to_string(), "logs".to_string()],
         _ => Vec::new(),
     }
 }
@@ -393,6 +468,8 @@ mod tests {
         let invocation = invocation("compute_diff");
         let context = ToolExecutionContext {
             cwd: Path::new("."),
+            model: None,
+            intent: None,
         };
         let executor = SimulatedToolExecutor;
         let first = executor.execute(invocation.clone(), &context);
@@ -414,6 +491,8 @@ mod tests {
         let fixture = make_repo_fixture();
         let context = ToolExecutionContext {
             cwd: fixture.path(),
+            model: None,
+            intent: None,
         };
         let simulated = SimulatedToolExecutor;
         let runtime = RuntimeToolExecutor;
@@ -460,7 +539,11 @@ mod tests {
     #[test]
     fn runtime_diff_fails_outside_git_repo() {
         let temp = tempfile::tempdir().expect("tempdir");
-        let context = ToolExecutionContext { cwd: temp.path() };
+        let context = ToolExecutionContext {
+            cwd: temp.path(),
+            model: None,
+            intent: None,
+        };
         let executor = RuntimeToolExecutor;
         let invocation = invocation("compute_diff");
 

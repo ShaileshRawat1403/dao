@@ -6,6 +6,7 @@ use super::state::ThreadId;
 
 use std::path::PathBuf;
 
+use super::policy_engine::ReviewPolicy;
 use super::state::ApplyStatus;
 use super::state::ApprovalAction;
 use super::state::ApprovalDecisionRecord;
@@ -75,10 +76,41 @@ pub enum UserAction {
     },
     SetLogLevelFilter(Option<LogLevel>),
     SetLogSearch(String),
+    ScrollLogs(i16),
+    SetLogScroll(u16),
+    SetLogStickToBottom(bool),
     ClearArtifact {
         which: ClearWhich,
         reason: ClearReason,
     },
+    ChatInput(char),
+    ChatBackspace,
+    ChatSubmit,
+    SetChatFocus(bool),
+    ResetSession,
+    ConfirmReset,
+    CancelReset,
+    ShowHelp,
+    ChatHistoryUp,
+    ChatHistoryDown,
+    ReviewChanges,
+    ResizeInput(i16),
+    ToggleFocusMode,
+    ShowModelSelection,
+    ModelListMoveUp,
+    ModelListMoveDown,
+    ModelListSubmit,
+    CopyDiffToClipboard,
+    SetPlanStickToRunning(bool),
+    PlanStepUp,
+    PlanStepDown,
+    TogglePlanStepExpansion,
+    PlanStepPageUp,
+    PlanStepPageDown,
+    FileBrowserUp,
+    FileBrowserDown,
+    FileBrowserEnter,
+    FileBrowserBack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,6 +151,7 @@ pub enum RuntimeAction {
     SetSkillsEnabledCount(usize),
     SetCollaborationModeLabel(String),
     SetModelSlug(Option<String>),
+    SetModelProvider(Option<String>),
     SetReasoningEffort(Option<ReasoningEffort>),
     SetTab(ShellTab),
     SetJourney(JourneyStep),
@@ -147,6 +180,7 @@ pub enum RuntimeAction {
 
     SetJourneyErrorState(Option<JourneyError>),
     SetPolicyTier(PolicyTier),
+    SetReviewPolicy(ReviewPolicy),
     AssessPolicyGate {
         run_id: u64,
         action: ApprovalAction,
@@ -167,6 +201,7 @@ pub enum RuntimeAction {
     SetDiff(String),
     SetExplain(String),
     AppendLog(String),
+    SetThinking(bool),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
